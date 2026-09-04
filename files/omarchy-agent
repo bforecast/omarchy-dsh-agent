@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 #
 # User extension wrapper: when the default agent is the local DSH agent, launch
-# DSH's web interface instead of a terminal agent; otherwise forward to the
-# real omarchy-agent. Flags match the stock binary (--inline, --pick, --prompt).
+# DSH instead of a terminal agent; otherwise forward to the real omarchy-agent.
+# Flags match the stock binary (--inline, --pick, --prompt).
+#
+#   no prompt            -> dsh-web  (ensure DSH runs, open its web UI)
+#   prompt (e.g. crash)  -> dsh-solve-error --text "<prompt>" so DSH analyzes
+#                           and proposes a fix (headless run in a terminal)
 # Remove this file to restore stock behaviour.
 
 set -uo pipefail
@@ -19,11 +23,12 @@ if [[ $agent != "dsh" ]]; then
   exec "$real" "$@"
 fi
 
-# Default agent is dsh: gather flags and launch the web UI.
+# Default agent is dsh: gather flags.
+inline=false
 prompt=""
 while (($#)); do
   case "$1" in
-    --inline) ;;
+    --inline) inline=true ;;
     --pick) ;;
     --prompt) shift; prompt=${1:-} ;;
     -h | --help)
@@ -38,7 +43,13 @@ while (($#)); do
 done
 
 if [[ -n ${prompt:-} ]]; then
-  exec "$HOME/.local/bin/dsh-web" --prompt "$prompt"
+  # A prompt (crash diagnosis, "agent prompt ...") is an error to solve.
+  if $inline; then
+    exec "$HOME/.local/bin/dsh-solve-error" --text "$prompt"
+  else
+    exec omarchy-launch-tui --app-id=org.omarchy.agent \
+      "$HOME/.local/bin/dsh-solve-error" --text "$prompt"
+  fi
 else
   exec "$HOME/.local/bin/dsh-web"
 fi

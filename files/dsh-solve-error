@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+#
+# dsh-solve-error -- collect an error context and have the local DeepSeek
+# Harness (DSH) analyze and propose a fix, printing the result.
+#
+# Usage:
+#   dsh-solve-error                 auto-collect recent system/user error logs
+#   dsh-solve-error --auto          same as above
+#   dsh-solve-error <text...>       solve the given error text
+#   dsh-solve-error --text STRING   same, single argument
+#   dsh-solve-error --file PATH     solve the error described in a file/log
+#   dsh-solve-error --show-context  print the collected context and exit
+#   dsh-solve-error --dry-run       show the command that would run dsh, exit
+#
+# The heavy lifting is delegated to: dsh --profile headless "<task>"
+
+set -uo pipefail
+
+DSH_REPO=${DSH_REPO:-"$HOME/deepseek-harness"}
+DSH_BIN="$DSH_REPO/apps/cli/src/bin.ts"
+
+mode=auto        # auto | text | file
+text=""
+show_context=false
+dry_run=false
+
+while (($#)); do
+  case "$1" in
+    --auto) mode=auto ;;
+    --text) shift; text=${1:-}; mode=text ;;
+    --file) shift; text=${1:-}; mode=file ;;
+    --show-context) show_context=true ;;
+    --dry-run) dry_run=true ;;
+    -h | --help)
+      sed -n '1,16p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    -*) echo "dsh-solve-error: unknown flag: $1" >&2; exit 1 ;;
+    *)
+      if [[ $mode == auto ]]; then mode=text; fi
+      [[ -n $text ]] && text+=" "
+      text+="$1"
+      ;;
+  esac
+  shift
+done
+
+collect_auto() {
+  local cap=12000
+  {
+    echo "### dsh-solve-error diagnostics ($(date '+%F %T %Z'))"
+    echo "--- system error log (this boot, -p err, last 60) ---"
+    journalctl --no-pager -p err -n 60 -b 2>/dev/null | tail -60
+    echo "--- user session error log (this boot, -p err, last 40) ---"
+    journalctl --user --no-pager -p err -n 40 -b 2>/dev/null | tail -40
+    echo "--- recent core dumps ---"
+    coredumpctl list --no-pager 2>/dev/null | tail -5
+    echo "--- session ---"
+    printf 'session=%s desktop=%s\n' "${XDG_SESSION_TYPE:-unknown}" "${XDG_CURRENT_DESKTOP:-unknown}"
+  } 2>/dev/null | tail -c "$cap"
+}
+
+case "$mode" in
+  auto)
+    context=$(collect_auto)
+    ;;
+  text)
+    context=$text
+    ;;
+  file)
+    if [[ ! -f $text ]]; then
+      echo "dsh-solve-error: file not found: $text" >&2
+      exit 1
+    fi
+    context=$(head -c 12000 "$text")
+    ;;
+esac
+
+[[ -n $context ]] || { echo "dsh-solve-error: empty context; nothing to solve" >&2; exit 1; }
+
+if $show_context; then
+  printf '%s\n' "$context"
+  exit 0
+fi
+
+task=$(cat <<PROMPT
+You are debugging an error report on an Omarchy Linux system (Arch Linux + Hyprland + Quickshell). Diagnose it from the context below, which may include journal error lines, a crash record, or text the user pasted.
+
+Report:
+1. Most likely cause (evidence first; say clearly what is inferred).
+2. Concrete commands to confirm the cause.
+3. Fix steps, with exact commands.
+4. If a step needs root, mark it "sudo".
+5. Anything in the context you cannot verify from here, list the exact command the user should run and what to look for.
+
+Keep it actionable and concise.
+
+=== Error context ===
+$context
+=== End of context ===
+PROMPT
+)
+
+if [[ ! -f $DSH_BIN ]]; then
+  echo "dsh-solve-error: DSH not found at $DSH_REPO (set DSH_REPO)." >&2
+  echo "Install it first, e.g. from the omarchy-dsh-agent plugin: ./install.sh" >&2
+  exit 1
+fi
+if ! command -v node >/dev/null 2>&1; then
+  echo "dsh-solve-error: node is not on PATH" >&2
+  exit 1
+fi
+
+cmd=(node --import tsx/esm "$DSH_BIN" --profile headless "$task")
+if $dry_run; then
+  printf 'would run in %s:\n  %s\n' "$DSH_REPO" "${cmd[*]:0:5}…"
+  exit 0
+fi
+
+cd "$DSH_REPO" || exit 1
+echo "dsh-solve-error: asking DSH to analyze the error (headless run, may take a while)…" >&2
+"${cmd[@]}"
+echo "dsh-solve-error: done." >&2

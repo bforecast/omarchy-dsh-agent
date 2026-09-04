@@ -2,4 +2,7 @@
   // picker, wired to ~/.local/bin/omarchy-default-agent, which understands
   // `dsh`. Launching DSH uses the application row with the real icon
   // (dsh.desktop, Icon=dsh) or Super+Shift+Ctrl+A.
+  // "Fix system error with DSH": auto-collects recent system/user error logs
+  // and has the local DeepSeek Harness analyze them (headless, terminal).
+  "dsh-fix": {"icon":"󰚩","label":"Fix system error with DSH","description":"Collect recent error logs and analyze them with the local DeepSeek Harness","action":"omarchy-launch-tui --app-id=org.omarchy.agent dsh-solve-error --auto"},
   "setup.default.agent.dsh": {"icon":"󰚩","label":"DSH","description":"DeepSeek Harness (local web agent)","checked":"[[ \"$(omarchy-default-agent)\" == \"dsh\" ]]","action":"omarchy-default-agent dsh"}

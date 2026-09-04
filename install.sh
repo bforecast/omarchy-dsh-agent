@@ -87,6 +87,7 @@ install_one dsh-web
 install_one omarchy-default-agent
 install_one omarchy-agent
 install_one omarchy
+install_one dsh-solve-error
 
 # ---------- 3) 菜单合并（幂等） ----------
 menu="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"

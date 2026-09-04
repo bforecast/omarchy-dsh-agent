@@ -81,6 +81,7 @@ remove_one "$BIN/dsh-web" 'dsh-web -- Omarchy "AI agent" entry'
 remove_one "$BIN/omarchy-default-agent" 'teaches `omarchy default agent` about the local DSH'
 remove_one "$BIN/omarchy-agent" 'when the default agent is the local DSH agent'
 remove_one "$BIN/omarchy" 'User extension wrapper for the `omarchy` CLI'
+remove_one "$BIN/dsh-solve-error" 'dsh-solve-error -- collect an error context'
 
 # ---------- 菜单键移除 ----------
 if [[ -f $MENU ]]; then
@@ -182,7 +183,7 @@ fi
 if ! $DRY; then
   echo
   echo "== 卸载完成。可选的残留清理："
-  echo "   rm -f $BIN/dsh-web.dshplugin.bak $BIN/omarchy-default-agent.dshplugin.bak"
+  echo "   rm -f $BIN/dsh-web.dshplugin.bak $BIN/dsh-solve-error.dshplugin.bak $BIN/omarchy-default-agent.dshplugin.bak"
   echo "   rm -f $BIN/omarchy-agent.dshplugin.bak $BIN/omarchy.dshplugin.bak"
   echo "   rm -f \"$MENU.dshplugin.bak\" \"$BINDFILE.dshplugin.bak\" $STATE_FILE; rmdir $STATE_DIR 2>/dev/null || true"
   echo "   rm -rf ~/.local/state/dsh                 # DSH 运行日志"
