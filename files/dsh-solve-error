@@ -119,7 +119,24 @@ if $dry_run; then
   exit 0
 fi
 
+STATE_DIR="$HOME/.local/state/dsh-omarchy-agent"
+TRANSCRIPT="$STATE_DIR/last-error-solve.txt"
+
 cd "$DSH_REPO" || exit 1
 echo "dsh-solve-error: asking DSH to analyze the error (headless run, may take a while)…" >&2
-"${cmd[@]}"
-echo "dsh-solve-error: done." >&2
+mkdir -p "$STATE_DIR"
+"${cmd[@]}" 2>&1 | tee "$TRANSCRIPT"
+rc=${PIPESTATUS[0]}
+echo
+echo "dsh-solve-error: analysis finished (exit=$rc). Full result saved to:" >&2
+echo "  $TRANSCRIPT" >&2
+if command -v omarchy-notification-send >/dev/null 2>&1 && [[ -n ${WAYLAND_DISPLAY:-} ]]; then
+  omarchy-notification-send --urgency normal "DSH 错误分析完成" \
+    "结果已保存: $TRANSCRIPT — 请按 DSH 给出的建议执行修复（分析不会自动改动系统）。" >/dev/null 2>&1 || true
+fi
+# 交互终端下保持窗口打开，便于查看结果
+if [[ -t 0 && -t 1 ]]; then
+  read -rsp '按 Enter 关闭窗口…'
+  echo
+fi
+exit "$rc"
