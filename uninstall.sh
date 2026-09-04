@@ -5,6 +5,7 @@
 # Usage:
 #   ./uninstall.sh [-n] [-r <agent>]
 #     -n          dry run
+#     --keep-widget  do not remove the omarchy-managed bar widget (dsh-launcher)
 #     -r <agent>  default-AI restore target (fallback when no state file; default codex)
 #
 # Removes only files whose content matches this plugin; modified files are skipped with a warning.
@@ -13,10 +14,12 @@ set -euo pipefail
 
 SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DRY=false
+KEEP_WIDGET=false
 RESTORE_AGENT="codex"
 while (($#)); do
   case "$1" in
     -n | --dry-run) DRY=true ;;
+    --keep-widget) KEEP_WIDGET=true ;;
     -r | --restore) shift; RESTORE_AGENT=${1:?need agent} ;;
     -h | --help) sed -n '1,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "uninstall.sh: unknown argument: $1" >&2; exit 1 ;;
@@ -177,6 +180,32 @@ else
   rm -f "$ICON_ROOT"/hicolor/*x*/apps/dsh.png 2>/dev/null || true
   gtk-update-icon-cache -f "$ICON_ROOT/hicolor" >/dev/null 2>&1 || true
   echo "== Deleted dsh.png icons and refreshed the cache"
+fi
+
+# ---------- Bar widget (omarchy plugin system) removal ----------
+# The bar icon "dsh-launcher" is installed and managed by `omarchy plugin add`,
+# not by install.sh; remove it here too so uninstall leaves nothing behind.
+WIDGET_ID="dsh-launcher"
+WIDGET_DIR="$HOME/.config/omarchy/plugins/$WIDGET_ID"
+if $KEEP_WIDGET; then
+  echo "== Skipped bar-widget removal (--keep-widget)"
+elif [[ -d $WIDGET_DIR ]] \
+    && grep -qF '"id": "dsh-launcher"' "$WIDGET_DIR/manifest.json" 2>/dev/null \
+    && grep -qF "DSH Launcher bar widget." "$WIDGET_DIR/BarWidget.qml" 2>/dev/null; then
+  if $DRY; then
+    echo "  [dry-run] would remove the bar widget: omarchy plugin remove $WIDGET_ID --yes"
+  else
+    if omarchy plugin remove "$WIDGET_ID" --yes >/dev/null 2>&1; then
+      echo "== Removed bar widget: $WIDGET_ID"
+    else
+      echo "!! Could not remove the bar widget automatically; run manually:" >&2
+      echo "   omarchy plugin remove $WIDGET_ID --yes" >&2
+    fi
+  fi
+elif [[ -d $WIDGET_DIR ]]; then
+  echo "!! Bar widget exists but differs from this plugin; not removing: $WIDGET_DIR" >&2
+else
+  echo "== No bar widget installed (plugin-managed dsh-launcher not found)"
 fi
 
 # ---------- Leftover cleanup hints ----------
