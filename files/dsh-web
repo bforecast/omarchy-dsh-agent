@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+#
+# dsh-web -- Omarchy "AI agent" entry for the local DeepSeek Harness (DSH).
+#
+# Starts the DSH web profile (repo-root `dsh web` == `dsh --profile web`,
+# which serves http://127.0.0.1:3080 and hosts the agent sessions) when it is
+# not already running, then opens the interface in an Omarchy web-app window
+# (falls back to the default browser). Safe to run repeatedly: if the server
+# is already up it only opens the window.
+#
+# Usage:
+#   dsh-web                 ensure DSH is running, then open its interface
+#   dsh-web --no-open       ensure DSH is running; print status only
+#   dsh-web --prompt TEXT   accepted for omarchy-agent compatibility
+#
+# Env overrides: DSH_REPO, DSH_URL, DSH_LOG.
+
+set -uo pipefail
+
+DSH_REPO=${DSH_REPO:-"$HOME/deepseek-harness"}
+DSH_URL=${DSH_URL:-http://127.0.0.1:3080}
+DSH_LOG=${DSH_LOG:-"$HOME/.local/state/dsh/web.log"}
+
+open_window=1
+
+while (($#)); do
+  case "$1" in
+    --no-open) open_window=0 ;;
+    --prompt) shift ;;
+    -h | --help)
+      sed -n '1,20p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *)
+      echo "dsh-web: unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+# "Up" means the port answers at all. DSH's root can reply 401 to an
+# unauthenticated probe, so HTTP status codes are ignored on purpose; only a
+# connection failure counts as down.
+alive() { curl -s -o /dev/null --max-time 2 "$DSH_URL"; }
+
+if ! alive; then
+  if [[ ! -d $DSH_REPO || ! -f "$DSH_REPO/apps/cli/src/bin.ts" ]]; then
+    echo "dsh-web: DSH checkout not found at $DSH_REPO (set DSH_REPO)" >&2
+    exit 1
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    echo "dsh-web: node is not on PATH" >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$DSH_LOG")"
+  (
+    cd "$DSH_REPO" || exit 1
+    export PATH="$DSH_REPO/node_modules/.bin:$PATH"
+    exec node --import tsx/esm apps/cli/src/bin.ts web
+  ) >>"$DSH_LOG" 2>&1 &
+  echo "dsh-web: starting DSH (log: $DSH_LOG)"
+  for _ in $(seq 1 90); do
+    alive && break
+    sleep 1
+  done
+  if ! alive; then
+    echo "dsh-web: DSH did not come up; see $DSH_LOG" >&2
+    exit 1
+  fi
+fi
+
+echo "dsh-web: DSH is running at $DSH_URL"
+((open_window)) || exit 0
+
+if command -v omarchy-launch-webapp >/dev/null 2>&1; then
+  exec omarchy-launch-webapp "$DSH_URL"
+elif command -v omarchy-launch-browser >/dev/null 2>&1; then
+  exec omarchy-launch-browser "$DSH_URL"
+elif command -v xdg-open >/dev/null 2>&1; then
+  exec xdg-open "$DSH_URL"
+else
+  echo "dsh-web: DSH is running at $DSH_URL" >&2
+  exit 1
+fi

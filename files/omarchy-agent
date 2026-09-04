@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#
+# User extension wrapper: when the default agent is the local DSH agent, launch
+# DSH's web interface instead of a terminal agent; otherwise forward to the
+# real omarchy-agent. Flags match the stock binary (--inline, --pick, --prompt).
+# Remove this file to restore stock behaviour.
+
+set -uo pipefail
+
+real=/usr/share/omarchy/bin/omarchy-agent
+agent_file="$HOME/.config/omarchy/defaults/agent"
+
+agent=""
+if [[ -f $agent_file ]]; then
+  read -r agent <"$agent_file"
+fi
+
+if [[ $agent != "dsh" ]]; then
+  exec "$real" "$@"
+fi
+
+# Default agent is dsh: gather flags and launch the web UI.
+prompt=""
+while (($#)); do
+  case "$1" in
+    --inline) ;;
+    --pick) ;;
+    --prompt) shift; prompt=${1:-} ;;
+    -h | --help)
+      exec "$real" --help
+      ;;
+    *)
+      echo "omarchy-agent: unexpected argument: $1" >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+if [[ -n ${prompt:-} ]]; then
+  exec "$HOME/.local/bin/dsh-web" --prompt "$prompt"
+else
+  exec "$HOME/.local/bin/dsh-web"
+fi

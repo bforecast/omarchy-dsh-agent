@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# User extension wrapper for the `omarchy` CLI. The real dispatcher execs its
+# own binaries directly (never PATH), so a bare `omarchy agent` or
+# `omarchy default agent dsh` typed by hand would bypass the ~/.local/bin
+# wrappers. This file only intercepts those two cases and forwards everything
+# else verbatim to the real omarchy CLI. Remove this file to restore stock
+# behaviour.
+
+set -uo pipefail
+
+real=/usr/share/omarchy/bin/omarchy
+
+case "${1:-}" in
+  agent)
+    # Bare `omarchy agent` or flag forms (`--pick`, `--inline`, `--prompt ...`)
+    # resolve to the omarchy-agent binary; subcommands like `agent crash` or
+    # `agent usage` are separate binaries and are left to the real CLI.
+    if [[ $# -eq 1 || ${2:-} == -* ]]; then
+      exec "$HOME/.local/bin/omarchy-agent" "${@:2}"
+    fi
+    exec "$real" "$@"
+    ;;
+  default)
+    if [[ ${2:-} == "agent" && ${3:-} == "dsh" ]]; then
+      exec "$HOME/.local/bin/omarchy-default-agent" "$3"
+    fi
+    exec "$real" "$@"
+    ;;
+  *)
+    exec "$real" "$@"
+    ;;
+esac

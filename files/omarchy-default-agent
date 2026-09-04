@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#
+# User extension wrapper: teaches `omarchy default agent` about the local DSH
+# agent. Lives in ~/.local/bin (ahead of /usr/share/omarchy/bin on PATH) so the
+# menu picker, bar, and crash flow see it. Stock agent names and the bare
+# getter are forwarded transparently to the real implementation; only `dsh` is
+# handled here. Remove this file to restore stock behaviour.
+
+set -uo pipefail
+
+real=/usr/share/omarchy/bin/omarchy-default-agent
+agent_file="$HOME/.config/omarchy/defaults/agent"
+
+installing=false
+if [[ ${1:-} == "--install" ]]; then
+  installing=true
+  shift
+fi
+
+if (($# == 0)); then
+  if [[ -f $agent_file ]]; then
+    read -r agent <"$agent_file"
+  fi
+  [[ -n ${agent:-} ]] && echo "$agent"
+  exit 0
+fi
+
+if [[ $1 == "dsh" ]]; then
+  launcher="$HOME/.local/bin/dsh-web"
+  if [[ ! -x $launcher ]]; then
+    echo "omarchy-default-agent: DSH launcher missing: $launcher" >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$agent_file")"
+  printf 'dsh\n' >"$agent_file"
+  if [[ $installing == "true" ]]; then
+    echo "DSH (DeepSeek Harness) is installed and ready."
+  else
+    echo "DSH (DeepSeek Harness) is now the default AI agent"
+  fi
+  exit 0
+fi
+
+exec "$real" $([[ $installing == true ]] && echo --install) "$@"
