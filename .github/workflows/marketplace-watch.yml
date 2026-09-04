@@ -1,0 +1,26 @@
+name: marketplace-watch
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # every 15 minutes
+  workflow_dispatch: {}       # manual run: .github/workflows/marketplace-watch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      WATCH_REPO: omacom/omarchy-plugin-marketplace
+      WATCH_ISSUE: "4820"
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: "587"
+      SMTP_FROM: ${{ secrets.GMAIL_ADDRESS }}
+      SMTP_TO: ${{ secrets.NOTIFY_EMAIL }}
+      SMTP_PASS: ${{ secrets.GMAIL_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Track marketplace approval progress and notify by email
+        run: bash .github/marketplace-watch.sh
