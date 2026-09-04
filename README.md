@@ -1,9 +1,11 @@
 # omarchy-dsh-agent —— 把 DeepSeek Harness 装成 Omarchy 的 AI agent
 
+GitHub: https://github.com/bforecast/omarchy-dsh-agent
+
 一个可 git 分发的 Omarchy 插件包。在任一台 Omarchy 机器上克隆后一键执行：
 
 ```bash
-git clone <你的仓库地址> omarchy-dsh-agent
+git clone https://github.com/bforecast/omarchy-dsh-agent.git omarchy-dsh-agent
 cd omarchy-dsh-agent
 ./install.sh --default        # 安装 DSH 并注册为默认 AI agent
 ./install.sh                  # 只安装并注册，不改动现有默认 AI
