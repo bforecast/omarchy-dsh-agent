@@ -9,11 +9,14 @@
 #      default-AI key (SUPER + SHIFT + CTRL + A) to the wrapper's absolute path (skip with --no-keybinding),
 #      and register DSH as a desktop application with the official icon (real icon in app search/menus)
 #   4) Optional --default: point the default AI record at dsh (previous value recorded so uninstall can restore it)
+#   5) Optional --with-widget: also install and enable the top-bar "dsh-launcher"
+#      widget through `omarchy plugin add` (--widget-url overrides the repo source)
 #
 # All writes stay under the user home; /usr/share/omarchy is never modified. Re-runnable (idempotent).
 #
 # Usage:
-#   ./install.sh [--default] [--repo-dir PATH] [--repo-url URL] [--no-bootstrap] [--no-keybinding] [--dry-run]
+#   ./install.sh [--default] [--with-widget] [--widget-url URL] [--repo-dir PATH] [--repo-url URL]
+#                [--no-bootstrap] [--no-keybinding] [--dry-run]
 
 set -euo pipefail
 
@@ -24,12 +27,16 @@ DRY=false
 SET_DEFAULT=false
 NO_BOOTSTRAP=false
 NO_KEYBINDING=false
+WITH_WIDGET=false
+WIDGET_URL="https://github.com/bforecast/omarchy-dsh-agent.git"
 REPO_DIR="${DSH_REPO_DIR:-$HOME/deepseek-harness}"
 REPO_URL="https://github.com/deepseek-ai/deepseek-harness.git"
 
 while (($#)); do
   case "$1" in
     --default) SET_DEFAULT=true ;;
+    --with-widget) WITH_WIDGET=true ;;
+    --widget-url) shift; WIDGET_URL=${1:?--widget-url needs a URL} ;;
     --repo-dir) shift; REPO_DIR=${1:?--repo-dir needs a path} ;;
     --repo-url) shift; REPO_URL=${1:?--repo-url needs a URL} ;;
     --no-bootstrap) NO_BOOTSTRAP=true ;;
@@ -250,6 +257,36 @@ if $SET_DEFAULT; then
   fi
 else
   echo "== Default AI not set (add --default or run later: omarchy default agent dsh)"
+fi
+
+# ---------- 5) Optional: top-bar widget (omarchy plugin system) ----------
+# Agent registration is install.sh's job; the bar icon is a shell plugin in this
+# repository installed through `omarchy plugin add` -- a separate channel.
+# --with-widget runs that channel too so one command reproduces the whole setup.
+if $WITH_WIDGET; then
+  if ! command -v omarchy >/dev/null 2>&1; then
+    echo "!! omarchy CLI not found; skipping bar widget (add it later with: omarchy plugin add $WIDGET_URL --yes --enable)" >&2
+  else
+    widget_dir="$HOME/.config/omarchy/plugins/dsh-launcher"
+    if [[ -d $widget_dir ]] && grep -qF "dsh-launcher" "$HOME/.config/omarchy/shell.json" 2>/dev/null; then
+      echo "== Bar widget already installed and enabled; skipping"
+    else
+      if $DRY; then
+        echo "  [dry-run] would add and enable the bar widget: omarchy plugin add $WIDGET_URL --yes --enable"
+      else
+        if omarchy plugin add "$WIDGET_URL" --yes --enable; then
+          omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
+          omarchy plugin enable dsh-launcher >/dev/null 2>&1 || true
+          echo "== Bar widget installed and enabled (dsh-launcher)"
+        else
+          echo "!! Could not add the bar widget; run it manually:" >&2
+          echo "   omarchy plugin add $WIDGET_URL --yes --enable" >&2
+        fi
+      fi
+    fi
+  fi
+else
+  echo "== Bar widget not installed (add --with-widget, or run: omarchy plugin add $WIDGET_URL --yes --enable)"
 fi
 
 echo

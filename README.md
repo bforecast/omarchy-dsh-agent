@@ -57,6 +57,8 @@ files/
 | Option | Description |
 | --- | --- |
 | `--default` | Make `dsh` the default AI after install (previous default is recorded and restored on uninstall) |
+| `--with-widget` | Also install and enable the top-bar `dsh-launcher` widget via `omarchy plugin add` (full setup in one command) |
+| `--widget-url URL` | Widget repo source for `--with-widget` (default `https://github.com/bforecast/omarchy-dsh-agent.git`) |
 | `--repo-dir PATH` | DSH source directory (default `~/deepseek-harness`; reused if it already exists) |
 | `--repo-url URL` | Clone source (default `https://github.com/deepseek-ai/deepseek-harness.git`) |
 | `--no-bootstrap` | Skip `pnpm install` |
@@ -79,6 +81,12 @@ kind, id `dsh-launcher`): a bar icon that starts DSH and opens its web UI.
 ```bash
 omarchy plugin add https://github.com/bforecast/omarchy-dsh-agent.git   # clone into ~/.config/omarchy/plugins
 omarchy plugin enable dsh-launcher                                      # place the DSH icon in the bar
+```
+
+Or let `install.sh` do both at once:
+
+```bash
+./install.sh --default --with-widget
 ```
 
 The widget only launches DSH — full AI-agent registration (PATH wrappers,

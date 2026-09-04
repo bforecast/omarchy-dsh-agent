@@ -55,6 +55,8 @@ files/
 | 参数 | 说明 |
 | --- | --- |
 | `--default` | 安装后把默认 AI 设为 dsh（记录原值，卸载自动还原） |
+| `--with-widget` | 同时通过 `omarchy plugin add` 安装并启用顶栏 `dsh-launcher` widget（一条命令完整复刻） |
+| `--widget-url URL` | `--with-widget` 的仓库源（缺省 `https://github.com/bforecast/omarchy-dsh-agent.git`） |
 | `--repo-dir PATH` | DSH 源码目录（缺省 `~/deepseek-harness`；已存在则复用） |
 | `--repo-url URL` | 克隆来源（缺省 `https://github.com/deepseek-ai/deepseek-harness.git`） |
 | `--no-bootstrap` | 跳过 `pnpm install` |
@@ -75,6 +77,12 @@ Omarchy 菜单的**静态菜单项只能显示字体图标**（无法放 PNG）�
 ```bash
 omarchy plugin add https://github.com/bforecast/omarchy-dsh-agent.git   # 克隆到 ~/.config/omarchy/plugins
 omarchy plugin enable dsh-launcher                                      # 把 DSH 图标放进顶栏
+```
+
+或一条命令同时完成：
+
+```bash
+./install.sh --default --with-widget
 ```
 
 widget 只负责启动 DSH；完整的 AI-agent 注册（PATH 包装、默认 agent、按键、
