@@ -86,6 +86,8 @@ fi
 task=$(cat <<PROMPT
 You are debugging an error report on an Omarchy Linux system (Arch Linux + Hyprland + Quickshell). Diagnose it from the context below, which may include journal error lines, a crash record, or text the user pasted.
 
+If your harness provides skills, load and follow the relevant Omarchy skills under ~/.agents/skills as applicable: 'omarchy' for system context, and 'diagnose-crash' when the context is a process crash.
+
 Report:
 1. Most likely cause (evidence first; say clearly what is inferred).
 2. Concrete commands to confirm the cause.

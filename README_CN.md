@@ -85,15 +85,15 @@ widget 只负责启动 DSH；完整的 AI-agent 注册（PATH 包装、默认 ag
 系统出现 error log（崩溃提示、journal 报错、粘来的错误文本）时，可以直接交给本地
 DeepSeek Harness 分析解决：
 
+- **Omarchy skills**：任务会指示 DSH 在适当时使用 `~/.agents/skills` 下随附的 Omarchy skill
+  （`omarchy`；崩溃场景另有 `diagnose-crash`）。
 - **`dsh-solve-error`**（由 `install.sh` 安装）：
   - `dsh-solve-error` 或 `dsh-solve-error --auto` —— 自动抓取最近系统/用户错误日志与
     core dump 列表，交给 DSH 分析（headless 运行，直接输出结论）；
   - `dsh-solve-error "错误文本"` / `--text …` / `--file 日志文件` —— 针对指定错误或日志；
   - `--show-context` 预览将发送的内容；`--dry-run` 只显示要执行的 DSH 命令。
-- **崩溃提示 / `omarchy agent crash`**：默认 agent 为 `dsh` 时，点击"诊断"不再是只打开
-  网页——会带崩溃事实在终端里运行 `dsh-solve-error`，由 DSH 给出原因与修复步骤。
-- **菜单**：新增 "Fix system error with DSH" 项（Super+Space，id `dsh-fix`），在终端运行
-  `dsh-solve-error --auto`。
+- **崩溃提示 / `omarchy agent crash`**：默认 agent 为 `dsh` 时，点击"诊断"会带崩溃事实在
+  终端里运行 `dsh-solve-error`，由 DSH 给出原因与修复步骤（无需额外菜单项）。
 
 要求：可用的 DSH 源码（`~/deepseek-harness`，见 install.sh）与 Node.js ≥ 22。
 

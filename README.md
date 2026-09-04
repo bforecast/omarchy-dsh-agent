@@ -89,6 +89,8 @@ default agent, keybinding, desktop entry) is done by `./install.sh`.
 When an error log shows up (a crash toast, a journal error, a pasted message),
 you can hand it to the local DeepSeek Harness for analysis:
 
+- **Omarchy skills**: the task tells DSH to load the bundled Omarchy skills
+  (`omarchy`, and `diagnose-crash` for crashes) from `~/.agents/skills` when applicable.
 - **`dsh-solve-error`** (installed by `install.sh`):
   - `dsh-solve-error` or `dsh-solve-error --auto` — collect the recent system/user
     error journal plus core-dump list and let DSH analyze them (headless run);
@@ -96,10 +98,8 @@ you can hand it to the local DeepSeek Harness for analysis:
     specific error or a log file;
   - `--show-context` previews what will be sent; `--dry-run` shows the DSH command.
 - **Crash notification / `omarchy agent crash`**: with `dsh` as the default agent the
-  click no longer just opens the web UI — it launches `dsh-solve-error` with the crash
-  facts in a terminal so DSH proposes a diagnosis and fix.
-- **Menu**: the "Fix system error with DSH" entry (Super+Space, id `dsh-fix`) runs
-  `dsh-solve-error --auto` in a terminal.
+  click launches `dsh-solve-error` with the crash facts in a terminal so DSH proposes a
+  diagnosis and fix (no extra menu entry needed).
 
 Requires a working DSH checkout (`~/deepseek-harness`, see install.sh) and Node.js >= 22.
 
