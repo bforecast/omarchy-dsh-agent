@@ -133,8 +133,8 @@ if (( rc != 0 )); then
   echo "dsh-solve-error: DSH exited with $rc (see reasoning above)." >&2
 fi
 echo
-echo "== DSH 分析结果 ==" >&2
-# 有 TTY 时用 bat 上色渲染 markdown；否则直接输出文本
+echo "== DSH analysis result ==" >&2
+# With a TTY, render the markdown with bat; otherwise print plain text
 if [[ -t 1 ]] && command -v bat >/dev/null 2>&1; then
   bat --paging=never -l md "$TRANSCRIPT" 2>/dev/null || cat "$TRANSCRIPT"
 else
@@ -143,13 +143,13 @@ fi
 echo "dsh-solve-error: analysis finished (exit=$rc). Result saved to:" >&2
 echo "  $TRANSCRIPT" >&2
 if command -v omarchy-notification-send >/dev/null 2>&1 && [[ -n ${WAYLAND_DISPLAY:-} ]]; then
-  omarchy-notification-send --urgency normal "DSH 错误分析完成" \
-    "结果已保存: $TRANSCRIPT（终端中已上色渲染）。分析不会自动改动系统，请按建议执行修复。" >/dev/null 2>&1 || true
+  omarchy-notification-send --urgency normal "DSH error analysis finished" \
+    "Result saved to: $TRANSCRIPT (rendered in the terminal). Analysis does not change the system automatically; apply the suggested fixes yourself." >/dev/null 2>&1 || true
 fi
-# 交互终端下保持窗口打开，便于查看结果
+# Keep the window open in an interactive terminal so the result can be read
 if [[ -t 0 && -t 1 ]]; then
   echo >&2
-  read -rsp '按 Enter 关闭窗口…' >&2
+  read -rsp 'Press Enter to close this window…' >&2
   echo >&2
 fi
 exit "$rc"

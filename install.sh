@@ -2,17 +2,17 @@
 #
 # omarchy-dsh-agent install.sh
 #
-# 一键把本地 DeepSeek Harness (DSH) 安装为 Omarchy 的 AI agent：
-#   1) 准备 DSH 源码：~/.deepseek-harness 不存在则自动 git clone（可 --repo-dir / --repo-url 覆盖）
-#   2) 安装启动器 ~/.local/bin/dsh-web 与 3 个用户级包装（omarchy-default-agent / omarchy-agent / omarchy）
-#   3) 合并菜单项到 ~/.config/omarchy/extensions/omarchy-menu.jsonc（幂等），把 Hyprland
-#      默认 AI 键（SUPER + SHIFT + CTRL + A）改绑为包装的绝对路径（--no-keybinding 跳过），
-#      并注册为带官方图标的桌面应用（应用搜索/菜单里显示真 DSH 图标）
-#   4) 可选 --default：把默认 AI 记录指向 dsh（记录旧值，卸载时可还原）
+# One-shot installer: register a local DeepSeek Harness (DSH) as an Omarchy AI agent.
+#   1) Prepare the DSH source: git clone into ~/deepseek-harness when missing (override with --repo-dir / --repo-url)
+#   2) Install the launcher ~/.local/bin/dsh-web and three user-level wrappers (omarchy-default-agent / omarchy-agent / omarchy)
+#   3) Merge menu entries into ~/.config/omarchy/extensions/omarchy-menu.jsonc (idempotent), rebind the Hyprland
+#      default-AI key (SUPER + SHIFT + CTRL + A) to the wrapper's absolute path (skip with --no-keybinding),
+#      and register DSH as a desktop application with the official icon (real icon in app search/menus)
+#   4) Optional --default: point the default AI record at dsh (previous value recorded so uninstall can restore it)
 #
-# 所有写入都在用户目录；不修改 /usr/share/omarchy。重复运行安全（幂等）。
+# All writes stay under the user home; /usr/share/omarchy is never modified. Re-runnable (idempotent).
 #
-# 用法:
+# Usage:
 #   ./install.sh [--default] [--repo-dir PATH] [--repo-url URL] [--no-bootstrap] [--no-keybinding] [--dry-run]
 
 set -euo pipefail
@@ -45,43 +45,43 @@ while (($#)); do
 done
 
 say() { if $DRY; then echo "  [dry-run] $*"; else echo "$*"; fi; }
-do_or_dry() { if $DRY; then echo "  [dry-run] 将执行: $*"; else "$@"; fi; }
+do_or_dry() { if $DRY; then echo "  [dry-run] would run: $*"; else "$@"; fi; }
 
 mkdir -p "$HOME/.local/bin"
 
-# ---------- 1) DSH 源码 ----------
+# ---------- 1) DSH source ----------
 if [[ ! -f "$REPO_DIR/apps/cli/src/bin.ts" ]]; then
   for c in git; do command -v "$c" >/dev/null 2>&1 || { echo "install.sh: missing '$c'" >&2; exit 1; }; done
-  echo "== 未找到 DSH 源码 ($REPO_DIR)，将 git clone $REPO_URL"
+  echo "== DSH source not found ($REPO_DIR); cloning $REPO_URL"
   do_or_dry git clone --depth 1 "$REPO_URL" "$REPO_DIR"
-  say "DSH 源码就绪: $REPO_DIR"
+  say "DSH source ready: $REPO_DIR"
 else
-  echo "== 复用现有 DSH 源码: $REPO_DIR"
+  echo "== Reusing existing DSH source: $REPO_DIR"
 fi
 
 if ! $NO_BOOTSTRAP && [[ -f "$REPO_DIR/apps/cli/src/bin.ts" && ! -d "$REPO_DIR/node_modules" ]]; then
   if command -v pnpm >/dev/null 2>&1; then
-    echo "== 安装 DSH 依赖 (pnpm install)…"
+    echo "== Installing DSH dependencies (pnpm install)…"
     (cd "$REPO_DIR" && do_or_dry pnpm install)
   else
-    echo "!! 未找到 pnpm；跳过依赖安装。启动 dsh 前请手动在 $REPO_DIR 执行: pnpm install" >&2
+    echo "!! pnpm not found; skipping dependency install. Run manually before starting dsh: cd $REPO_DIR && pnpm install" >&2
   fi
 fi
 
-# ---------- 2) 启动器 + 包装 ----------
+# ---------- 2) Launcher + wrappers ----------
 install_one() {
   local name=$1 src="$FILES/$1" dst="$HOME/.local/bin/$1"
-  if [[ ! -f $src ]]; then echo "install.sh: 缺少 payload: $src" >&2; exit 1; fi
+  if [[ ! -f $src ]]; then echo "install.sh: missing payload: $src" >&2; exit 1; fi
   if [[ -f $dst ]] && ! cmp -s "$src" "$dst"; then
     do_or_dry cp "$dst" "$dst.dshplugin.bak"
-    say "已备份旧文件 -> $dst.dshplugin.bak"
+    say "Backed up previous file -> $dst.dshplugin.bak"
   fi
   if $DRY; then
-    echo "  [dry-run] 将安装 $name -> $dst"
+    echo "  [dry-run] would install $name -> $dst"
   else
     install -m 0755 "$src" "$dst"
   fi
-  say "安装 $name"
+  say "Installed $name"
 }
 install_one dsh-web
 install_one omarchy-default-agent
@@ -89,10 +89,10 @@ install_one omarchy-agent
 install_one omarchy
 install_one dsh-solve-error
 
-# ---------- 3) 菜单合并（幂等） ----------
+# ---------- 3) Menu merge (idempotent) ----------
 menu="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
 if [[ -f $menu ]] && grep -qF "// Local DeepSeek Harness (DSH) -- AI agent entry" "$menu"; then
-  echo "== 菜单已包含 DSH 项，跳过"
+  echo "== Menu already contains the DSH entry; skipping"
 else
   mkdir -p "$(dirname "$menu")"
   [[ -f $menu ]] && do_or_dry cp "$menu" "$menu.dshplugin.bak"
@@ -107,11 +107,11 @@ with open(snippet_path, encoding="utf-8") as f:
 
 if not content.endswith("\n"):
     content += "\n"
-# 插到顶层对象最后一个 "}" 之前
+# Insert before the closing "}" of the top-level object
 idx = content.rstrip("\n").rfind("\n}")
 if idx == -1:
-    sys.exit("install: 菜单文件缺少结尾 '}'，无法合并，请人工检查 " + menu_path)
-insert_at = content.rfind("\n}") + 1  # 保留结尾
+    sys.exit("install: menu file has no closing '}'; cannot merge, please check " + menu_path)
+insert_at = content.rfind("\n}") + 1  # keep the closing brace
 new = content[:insert_at] + "\n" + snippet + content[insert_at:]
 
 def strip_jsonc(text):
@@ -132,21 +132,21 @@ def strip_jsonc(text):
         out.append(c); i += 1
     return "".join(out)
 
-json.loads(strip_jsonc(new))  # 校验，失败即报错退出
+json.loads(strip_jsonc(new))  # validate: fail loudly if broken
 if not dry:
     with open(menu_path, "w", encoding="utf-8") as f:
         f.write(new)
-print("== 菜单已合并 DSH 项")
+print("== Menu merged with DSH entry")
 PY
 fi
 
-# ---------- 3.5) Hyprland 默认 AI 键（绝对路径，绕开 exec PATH 问题） ----------
+# ---------- 3.5) Hyprland default-AI key (absolute path; avoids the exec-PATH issue) ----------
 if ! $NO_KEYBINDING; then
   bindfile="$HOME/.config/hypr/bindings.lua"
-  # 仅当检测到 Omarchy/Hyprland 按键体系时才写入
+  # Only write when an Omarchy/Hyprland keybinding system is detected
   if command -v hyprctl >/dev/null 2>&1 || [[ -d /usr/share/omarchy/default/hypr ]]; then
     if [[ -f $bindfile ]] && grep -qF -- "-- BEGIN omarchy-dsh-agent" "$bindfile"; then
-      echo "== 按键绑定已存在，跳过"
+      echo "== Keybinding already present; skipping"
     else
       mkdir -p "$(dirname "$bindfile")"
       [[ -f $bindfile ]] && do_or_dry cp "$bindfile" "$bindfile.dshplugin.bak"
@@ -163,32 +163,32 @@ o.bind("SUPER + SHIFT + CTRL + A", "Agent", "$HOME/.local/bin/omarchy-agent --pi
 LUA
 )
       if $DRY; then
-        echo "  [dry-run] 将把 Agent 键绑定写入 $bindfile"
+        echo "  [dry-run] would write the Agent keybinding to $bindfile"
       else
         printf '\n%s\n' "$block" >>"$bindfile"
-        echo "== 已写入 Agent 键绑定: SUPER + SHIFT + CTRL + A -> $HOME/.local/bin/omarchy-agent"
+        echo "== Wrote Agent keybinding: SUPER + SHIFT + CTRL + A -> $HOME/.local/bin/omarchy-agent"
         if command -v hyprctl >/dev/null 2>&1; then
           hyprctl reload >/dev/null 2>&1 \
-            && echo "   (hyprctl reload 完成，立即生效)" \
-            || echo "   (未能 hyprctl reload：下次图形会话生效，或手动执行 hyprctl reload)"
+            && echo "   (hyprctl reload done; active now)" \
+            || echo "   (hyprctl reload unavailable: takes effect at next graphical session, or run hyprctl reload manually)"
         fi
       fi
     fi
   else
-    echo "== 未检测到 Hyprland/Omarchy 按键体系，跳过按键绑定"
+    echo "== No Hyprland/Omarchy keybinding system detected; skipping keybinding"
   fi
 else
-  echo "== 已按 --no-keybinding 跳过 Hyprland 按键绑定"
+  echo "== Skipped Hyprland keybinding (--no-keybinding)"
 fi
 
-# ---------- 3.6) 注册为带官方图标的桌面应用（应用搜索/菜单里显示真图标） ----------
+# ---------- 3.6) Register as a desktop application with the official icon ----------
 desktop_dir="$HOME/.local/share/applications"
 desktop_file="$desktop_dir/dsh.desktop"
 icon_root="$HOME/.local/share/icons"
 mkdir -p "$desktop_dir"
 if [[ -f $desktop_file ]] && grep -qF "DeepSeek Harness" "$desktop_file" \
     && grep -qF "$HOME/.local/bin/dsh-web" "$desktop_file"; then
-  echo "== DSH 桌面项已存在，跳过"
+  echo "== DSH desktop entry already present; skipping"
 else
   if [[ -f $desktop_file ]]; then
     do_or_dry cp "$desktop_file" "$desktop_file.dshplugin.bak"
@@ -210,15 +210,15 @@ StartupNotify=true
 EOF
 )
   if $DRY; then
-    echo "  [dry-run] 将写入桌面项 $desktop_file"
+    echo "  [dry-run] would write desktop entry $desktop_file"
   else
     printf '%s\n' "$desktop" >"$desktop_file"
-    echo "== 已写入桌面项 $desktop_file"
+    echo "== Wrote desktop entry $desktop_file"
   fi
 fi
 if [[ -d $FILES/icons ]]; then
   if $DRY; then
-    echo "  [dry-run] 将安装官方图标到 $icon_root/hicolor"
+    echo "  [dry-run] would install official icons to $icon_root/hicolor"
   else
     while IFS= read -r icon; do
       rel="${icon#"$FILES/icons/"}"
@@ -227,11 +227,11 @@ if [[ -d $FILES/icons ]]; then
     done < <(find "$FILES/icons" -type f -name "*.png")
     gtk-update-icon-cache -f "$icon_root/hicolor" >/dev/null 2>&1 || true
     update-desktop-database "$desktop_dir" >/dev/null 2>&1 || true
-    echo "== 官方图标已安装到 $icon_root/hicolor"
+    echo "== Official icons installed to $icon_root/hicolor"
   fi
 fi
 
-# ---------- 4) 可选：设为默认 AI ----------
+# ---------- 4) Optional: set as the default AI ----------
 if $SET_DEFAULT; then
   state_dir="$HOME/.local/state/dsh-omarchy-plugin"
   state_file="$state_dir/state"
@@ -240,20 +240,20 @@ if $SET_DEFAULT; then
     read -r previous <"$HOME/.config/omarchy/defaults/agent" || true
   fi
   if [[ $previous == "dsh" ]]; then
-    echo "== 默认 AI 已是 dsh"
+    echo "== Default AI is already dsh"
   else
     do_or_dry mkdir -p "$state_dir"
     do_or_dry bash -c "printf 'plugin_default_set=1\nprevious_agent=%q\n' \"\$0\" > \"\$1\"" "$previous" "$state_file"
     do_or_dry "$HOME/.local/bin/omarchy-default-agent" dsh
-    echo "== 默认 AI 已设为 dsh${previous:+（原默认: $previous，卸载时自动还原）}"
+    echo "== Default AI set to dsh${previous:+ (previous default: $previous; restored on uninstall)}"
   fi
 else
-  echo "== 未设置默认 AI（如需设为默认请加 --default 或之后运行: omarchy default agent dsh）"
+  echo "== Default AI not set (add --default or run later: omarchy default agent dsh)"
 fi
 
 echo
-echo "== 安装完成。验证/使用："
-echo "   omarchy default agent          # 查看默认 AI"
-echo "   omarchy agent                  # 打开 DSH Web（独立窗口；未设置默认时请先 --default）"
-echo "   dsh-web --no-open              # 只确保服务运行"
-echo "   卸载: $SELF_DIR/uninstall.sh [-n]"
+echo "== Install complete. Verify / use:"
+echo "   omarchy default agent          # show the current default AI"
+echo "   omarchy agent                  # open DSH Web (add --default if no default agent is set yet)"
+echo "   dsh-web --no-open              # only ensure the server is running"
+echo "   Uninstall: $SELF_DIR/uninstall.sh [-n]"
