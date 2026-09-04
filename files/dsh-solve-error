@@ -125,18 +125,31 @@ TRANSCRIPT="$STATE_DIR/last-error-solve.txt"
 cd "$DSH_REPO" || exit 1
 echo "dsh-solve-error: asking DSH to analyze the error (headless run, may take a while)…" >&2
 mkdir -p "$STATE_DIR"
-"${cmd[@]}" 2>&1 | tee "$TRANSCRIPT"
-rc=${PIPESTATUS[0]}
+# Reasoning streams to stderr (live, activity feedback); the final assistant
+# message (markdown) is stdout and is captured cleanly for pretty rendering.
+"${cmd[@]}" >"$TRANSCRIPT" 2> >(sed -u 's/^/  · /' >&2)
+rc=$?
+if (( rc != 0 )); then
+  echo "dsh-solve-error: DSH exited with $rc (see reasoning above)." >&2
+fi
 echo
-echo "dsh-solve-error: analysis finished (exit=$rc). Full result saved to:" >&2
+echo "== DSH 分析结果 ==" >&2
+# 有 TTY 时用 bat 上色渲染 markdown；否则直接输出文本
+if [[ -t 1 ]] && command -v bat >/dev/null 2>&1; then
+  bat --paging=never -l md "$TRANSCRIPT" 2>/dev/null || cat "$TRANSCRIPT"
+else
+  cat "$TRANSCRIPT"
+fi
+echo "dsh-solve-error: analysis finished (exit=$rc). Result saved to:" >&2
 echo "  $TRANSCRIPT" >&2
 if command -v omarchy-notification-send >/dev/null 2>&1 && [[ -n ${WAYLAND_DISPLAY:-} ]]; then
   omarchy-notification-send --urgency normal "DSH 错误分析完成" \
-    "结果已保存: $TRANSCRIPT — 请按 DSH 给出的建议执行修复（分析不会自动改动系统）。" >/dev/null 2>&1 || true
+    "结果已保存: $TRANSCRIPT（终端中已上色渲染）。分析不会自动改动系统，请按建议执行修复。" >/dev/null 2>&1 || true
 fi
 # 交互终端下保持窗口打开，便于查看结果
 if [[ -t 0 && -t 1 ]]; then
-  read -rsp '按 Enter 关闭窗口…'
-  echo
+  echo >&2
+  read -rsp '按 Enter 关闭窗口…' >&2
+  echo >&2
 fi
 exit "$rc"
