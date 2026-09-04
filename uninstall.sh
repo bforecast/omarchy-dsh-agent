@@ -6,6 +6,7 @@
 #   ./uninstall.sh [-n] [-r <agent>]
 #     -n          dry run
 #     --keep-widget  do not remove the omarchy-managed bar widget (dsh-launcher)
+#     --keep-pwa     keep the Chromium-installed "DeepSeek Harness" PWA entry
 #     -r <agent>  default-AI restore target (fallback when no state file; default codex)
 #
 # Removes only files whose content matches this plugin; modified files are skipped with a warning.
@@ -15,11 +16,13 @@ set -euo pipefail
 SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DRY=false
 KEEP_WIDGET=false
+KEEP_PWA=false
 RESTORE_AGENT="codex"
 while (($#)); do
   case "$1" in
     -n | --dry-run) DRY=true ;;
     --keep-widget) KEEP_WIDGET=true ;;
+    --keep-pwa) KEEP_PWA=true ;;
     -r | --restore) shift; RESTORE_AGENT=${1:?need agent} ;;
     -h | --help) sed -n '1,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "uninstall.sh: unknown argument: $1" >&2; exit 1 ;;
@@ -59,13 +62,16 @@ if [[ $current == "dsh" ]]; then
     rm -f "$AGENT_FILE"
     echo "== Cleared the default AI record"
   else
-    if /usr/share/omarchy/bin/omarchy-default-agent "$target" >/dev/null 2>&1; then
-      echo "== Default AI restored to $target"
-    else
-      printf '%s\n' "$target" >"$AGENT_FILE"
-      echo "== Default AI restored to $target (wrote the record directly; make sure that agent is installed)"
-    fi
+    # Write the record directly. Never delegate to the stock default-agent
+    # setter here: it may decide the agent is missing and pop up an
+    # interactive install/presentation window (e.g. a Codex one).
+    mkdir -p "$(dirname "$AGENT_FILE")"
+    printf '%s\n' "$target" >"$AGENT_FILE"
+    echo "== Default AI restored to $target"
   fi
+  # The recorded previous default has been applied; drop the state file.
+  rm -f "$STATE_FILE"
+  rmdir "$STATE_DIR" 2>/dev/null || true
 else
   echo "== Current default AI is not dsh (=${current:-<unset>}); skipping default restore"
 fi
@@ -108,8 +114,13 @@ print(f"== Removing {keys} DSH menu key(s)" + (" (dry-run)" if dry else ""))
 if dry:
     sys.exit(0)
 del lines[start:end + 1]
+# Trim extra blank lines and make sure the file still ends with the closing "}".
 while len(lines) >= 2 and lines[-2].strip() == "" and lines[-1].strip() == "}":
     del lines[-2]
+while lines and lines[-1].strip() == "":
+    lines.pop()
+if not lines or lines[-1].strip() != "}":
+    lines.append("}\n")
 with open(path, "w", encoding="utf-8") as f:
     f.writelines(lines)
 print("== Menu restored")
@@ -208,12 +219,49 @@ else
   echo "== No bar widget installed (plugin-managed dsh-launcher not found)"
 fi
 
+# ---------- Chromium PWA entry cleanup (DeepSeek Harness) ----------
+# The DSH web UI may have been "installed as an app" from Chromium, which drops a
+# PWA .desktop entry that install.sh never creates. Remove those entries too so
+# uninstall leaves no DeepSeek Harness rows in app menus. The PWA itself stays
+# inside Chromium and can be re-added from the browser at any time.
+# Guard: Name mentions DeepSeek Harness AND Exec is a chromium --app-id launcher.
+remove_pwa_entry() {
+  local file=$1
+  if [[ -f $file ]] \
+      && grep -qiE '^Name=(DeepSeek Harness|DSH)' "$file" \
+      && grep -qE '^Exec=.*(chromium|chrome|google-chrome)' "$file" \
+      && grep -qE -- '--app-id=' "$file"; then
+    if $DRY; then
+      echo "  [dry-run] would delete PWA desktop entry $file"
+    else
+      rm -f "$file"
+      echo "== Deleted PWA desktop entry $file"
+    fi
+    return 0
+  fi
+  return 1
+}
+if $KEEP_PWA; then
+  echo "== Skipped Chromium PWA cleanup (--keep-pwa)"
+else
+  found_pwa=false
+  for f in "$HOME/.local/share/applications"/chrome-*-Default.desktop "$HOME"/chrome-*-Default.desktop; do
+    remove_pwa_entry "$f" && found_pwa=true
+  done
+  if ! $DRY && $found_pwa; then
+    update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
+  fi
+  if ! $found_pwa && [[ $KEEP_PWA == false ]]; then
+    echo "== No DeepSeek Harness PWA desktop entry found; skipping"
+  fi
+fi
+
 # ---------- Leftover cleanup hints ----------
 if ! $DRY; then
   echo
   echo "== Uninstall complete. Optional leftover cleanup:"
   echo "   rm -f $BIN/dsh-web.dshplugin.bak $BIN/dsh-solve-error.dshplugin.bak $BIN/omarchy-default-agent.dshplugin.bak"
   echo "   rm -f $BIN/omarchy-agent.dshplugin.bak $BIN/omarchy.dshplugin.bak"
-  echo "   rm -f \"$MENU.dshplugin.bak\" \"$BINDFILE.dshplugin.bak\" $STATE_FILE; rmdir $STATE_DIR 2>/dev/null || true"
+  echo "   rm -f \"$MENU.dshplugin.bak\" \"$BINDFILE.dshplugin.bak\""
   echo "   rm -rf ~/.local/state/dsh                 # DSH run log"
 fi

@@ -105,14 +105,15 @@ with open(menu_path, encoding="utf-8") as f:
 with open(snippet_path, encoding="utf-8") as f:
     snippet = f.read().rstrip("\n")
 
-if not content.endswith("\n"):
-    content += "\n"
-# Insert before the closing "}" of the top-level object
-idx = content.rstrip("\n").rfind("\n}")
+# Heal a missing closing brace (a previous merge/removal may have consumed it),
+# then insert the snippet right before the final "}".
+text = content
+if not text.rstrip().endswith("}"):
+    text = text.rstrip() + "\n}\n"
+idx = text.rfind("}")
 if idx == -1:
     sys.exit("install: menu file has no closing '}'; cannot merge, please check " + menu_path)
-insert_at = content.rfind("\n}") + 1  # keep the closing brace
-new = content[:insert_at] + "\n" + snippet + content[insert_at:]
+new = text[:idx] + "\n" + snippet + text[idx:]
 
 def strip_jsonc(text):
     out, i, in_str = [], 0, False
