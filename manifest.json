@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "dsh-launcher",
+  "name": "DSH Launcher",
+  "version": "1.0.0",
+  "author": "bforecast",
+  "license": "MIT",
+  "description": "One-click DeepSeek Harness launcher for the Omarchy bar (pairs with install.sh for full AI-agent registration)",
+  "kinds": [
+    "bar-widget"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "DSH",
+    "description": "One-click launcher: starts the local DeepSeek Harness and opens its web UI",
+    "category": "AI",
+    "aliases": ["dsh", "deepseek", "harness"],
+    "allowMultiple": false
+  }
+}

@@ -21,6 +21,8 @@ cd omarchy-dsh-agent
 ## Layout
 
 ```
+manifest.json           Omarchy shell-plugin manifest (bar-widget "dsh-launcher")
+BarWidget.qml           Bar icon: one-click start + open DSH web UI
 install.sh              Installer (idempotent, safe to re-run)
 uninstall.sh            Uninstaller (safe checks + --dry-run)
 files/
@@ -68,6 +70,19 @@ does not put glyph shortcut rows at the menu root. Launching DSH goes through th
 **application row with the official logo** (`.desktop` with `Icon=dsh`; search
 "DSH" in the launcher), and the Default-Agent picker entry uses a robot glyph,
 consistent with the other agents in that picker.
+
+## Bar widget (marketplace-ready shell plugin)
+
+The repository root is also a valid Omarchy **shell plugin** (`bar-widget`
+kind, id `dsh-launcher`): a bar icon that starts DSH and opens its web UI.
+
+```bash
+omarchy plugin add https://github.com/bforecast/omarchy-dsh-agent.git   # clone into ~/.config/omarchy/plugins
+omarchy plugin enable dsh-launcher                                      # place the DSH icon in the bar
+```
+
+The widget only launches DSH — full AI-agent registration (PATH wrappers,
+default agent, keybinding, desktop entry) is done by `./install.sh`.
 
 ## Verify
 

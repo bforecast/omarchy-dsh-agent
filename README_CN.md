@@ -19,6 +19,8 @@ cd omarchy-dsh-agent
 ## 目录结构
 
 ```
+manifest.json           Omarchy shell 插件清单（bar-widget "dsh-launcher"）
+BarWidget.qml           顶栏图标：一键启动并打开 DSH Web 界面
 install.sh              安装器（幂等，可重复运行）
 uninstall.sh            卸载器（带安全校验与干跑）
 files/
@@ -64,6 +66,19 @@ Omarchy 菜单的**静态菜单项只能显示字体图标**（无法放 PNG）�
 快捷行，避免误导图标；DSH 的启动统一走带**官方 logo** 的应用行（`.desktop`
 `Icon=dsh`，菜单应用搜索 "DSH" 即见），或在 Default Agent 选择器里设置/查看
 默认（该项用机器人字形，与选择器内其它 agent 风格一致）。
+
+## 顶栏 widget（marketplace 合规的 shell 插件）
+
+仓库根目录同时也是合法 Omarchy **shell 插件**（`bar-widget`，id `dsh-launcher`）：
+顶栏一个图标，点击启动 DSH 并打开 Web 界面。
+
+```bash
+omarchy plugin add https://github.com/bforecast/omarchy-dsh-agent.git   # 克隆到 ~/.config/omarchy/plugins
+omarchy plugin enable dsh-launcher                                      # 把 DSH 图标放进顶栏
+```
+
+widget 只负责启动 DSH；完整的 AI-agent 注册（PATH 包装、默认 agent、按键、
+桌面项）仍由 `./install.sh` 完成。
 
 ## 验证
 
