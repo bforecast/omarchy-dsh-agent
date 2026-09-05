@@ -125,7 +125,7 @@ else
   if [[ $USE_EXISTING == false ]]; then
     inrepo=$(git -C "$REPO_DIR" rev-parse --is-inside-work-tree 2>/dev/null || true)
     got=$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)
-    dirty=$(git -C "$REPO_DIR" status --porcelain 2>/dev/null | head -1 || true)
+    dirty=$(git --no-optional-locks -C "$REPO_DIR" status --porcelain 2>/dev/null | head -1 || true)
     if [[ $inrepo != "true" || -z $got || $got != "$pin" || -n $dirty ]]; then
       echo "install.sh: existing checkout is not a clean Git repo at the pinned commit $pin." >&2
       echo "   Conditions required without --use-existing: valid Git repo, HEAD == $pin, clean work tree." >&2
@@ -147,13 +147,48 @@ if ! $NO_BOOTSTRAP && [[ -f "$REPO_DIR/apps/cli/src/bin.ts" && ! -d "$REPO_DIR/n
   fi
 fi
 
+# ---------- Environment preflight (warnings only; no writes) ----------
+check_environment() {
+  if ! command -v node >/dev/null 2>&1; then
+    echo "!! node not found on PATH; DSH requires Node.js >= 22 (the wrapper and solver need it at runtime)." >&2
+  else
+    major=$(node --version 2>/dev/null | sed -n 's/^v\([0-9]*\).*/\1/p')
+    if [[ -n $major && $major -lt 22 ]]; then
+      echo "!! node $major detected; DSH requires Node.js >= 22." >&2
+    fi
+  fi
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*":/usr/share/omarchy/bin:"*) ;;
+    *)
+      echo "!! ~/.local/bin should come before /usr/share/omarchy/bin on PATH for the agent wrappers to take effect." >&2
+      echo "   (The Super+Shift+Ctrl+A keybinding uses an absolute path and works regardless.)" >&2
+      ;;
+  esac
+}
+check_environment
+
 # ---------- 2) Launcher + wrappers ----------
+# Back up a pre-existing file exactly once under <file>.dshplugin.bak (that
+# first snapshot is the user's original and is never overwritten). If a later
+# run (e.g. an upgrade) finds a differing target again, it saves a timestamped
+# extra instead.
+make_backup_once() {
+  local file=$1
+  [[ -e $file ]] || return 0
+  if [[ ! -e $file.dshplugin.bak ]]; then
+    do_or_dry cp "$file" "$file.dshplugin.bak"
+    say "Backed up previous file -> $file.dshplugin.bak"
+  else
+    local ts=${EPOCHSECONDS:-$(date +%s)}
+    do_or_dry cp "$file" "$file.dshplugin.bak.$ts"
+    say "Original backup kept; extra snapshot -> $file.dshplugin.bak.$ts"
+  fi
+}
 install_one() {
   local name=$1 src="$FILES/$1" dst="$HOME/.local/bin/$1"
   if [[ ! -f $src ]]; then echo "install.sh: missing payload: $src" >&2; exit 1; fi
   if [[ -f $dst ]] && ! cmp -s "$src" "$dst"; then
-    do_or_dry cp "$dst" "$dst.dshplugin.bak"
-    say "Backed up previous file -> $dst.dshplugin.bak"
+    make_backup_once "$dst"
   fi
   if $DRY; then
     echo "  [dry-run] would install $name -> $dst"
@@ -284,8 +319,8 @@ if [[ -f $desktop_file ]] && grep -qF "DeepSeek Harness" "$desktop_file" \
     && grep -qF "$HOME/.local/bin/dsh-web" "$desktop_file"; then
   echo "== DSH desktop entry already present; skipping"
 else
-  if [[ -f $desktop_file ]]; then
-    do_or_dry cp "$desktop_file" "$desktop_file.dshplugin.bak"
+  if [[ -f $desktop_file ]] && ! cmp -s <(printf '%s\n' "$desktop") "$desktop_file"; then
+    make_backup_once "$desktop_file"
   fi
   desktop=$(cat <<EOF
 # Installed by omarchy-dsh-agent plugin (uninstall.sh removes it).
@@ -319,8 +354,14 @@ if [[ -d $FILES/icons ]]; then
       target="$icon_root/$rel"
       mkdir -p "$(dirname "$target")"
       if [[ -e $target ]] && ! cmp -s "$icon" "$target"; then
-        cp "$target" "$target.dshplugin.bak"
-        echo "   (backed up existing icon -> $target.dshplugin.bak)"
+        if [[ ! -e $target.dshplugin.bak ]]; then
+          cp "$target" "$target.dshplugin.bak"
+          echo "   (backed up existing icon -> $target.dshplugin.bak)"
+        else
+          ts=${EPOCHSECONDS:-$(date +%s)}
+          cp "$target" "$target.dshplugin.bak.$ts"
+          echo "   (original icon backup kept; extra snapshot -> $target.dshplugin.bak.$ts)"
+        fi
       fi
       cp "$icon" "$target"
     done < <(find "$FILES/icons" -type f -name "*.png")

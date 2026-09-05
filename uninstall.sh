@@ -105,7 +105,9 @@ fi
 # A wrapper is only removed when it is byte-identical to the bundled template;
 # user modifications make it differ and are never deleted.
 remove_one() {
-  local path=$1 bundle="$SELF_DIR/files/$1"
+  local name=$1
+  local path="$BIN/$name"
+  local bundle="$SELF_DIR/files/$name"
   if [[ ! -e $path ]]; then
     echo "== Skipped (not found): $path"
     return
@@ -332,4 +334,5 @@ if ! $DRY; then
   echo
   echo "== Uninstall complete."
   echo "   Optional leftover cleanup: rm -rf ~/.local/state/dsh   # DSH run log"
+  echo "   rm -f ~/.local/bin/*.dshplugin.bak.* .../dsh.desktop.dshplugin.bak.*   # timestamped upgrade snapshots, if any"
 fi
