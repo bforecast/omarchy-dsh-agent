@@ -1,30 +1,36 @@
 #!/usr/bin/env bash
 #
-# omarchy-dsh-agent uninstall.sh -- remove everything install.sh installed.
+# omarchy-dsh-agent uninstall.sh -- remove what install.sh (and the optional
+# --with-widget step) installed, conservatively:
+#   * only removes files whose content matches this plugin;
+#   * restores the .dshplugin.bak backups that install.sh took before it
+#     overwrote pre-existing files;
+#   * only deletes icons that hash-match the ones we installed;
+#   * never touches the Chromium-installed "DeepSeek Harness" PWA unless
+#     --remove-pwa is passed;
+#   * never spawns installer windows and never modifies /usr/share/omarchy.
 #
 # Usage:
-#   ./uninstall.sh [-n] [-r <agent>]
-#     -n          dry run
-#     --keep-widget  do not remove the omarchy-managed bar widget (dsh-launcher)
-#     --keep-pwa     keep the Chromium-installed "DeepSeek Harness" PWA entry
-#     -r <agent>  default-AI restore target (fallback when no state file; default codex)
-#
-# Removes only files whose content matches this plugin; modified files are skipped with a warning.
+#   ./uninstall.sh [-n] [--keep-widget] [--remove-pwa] [-r <agent>]
+#     -n            dry run: report actions, change nothing (no state removal)
+#     --keep-widget keep the omarchy-managed bar widget (dsh-launcher)
+#     --remove-pwa  also delete Chromium "DeepSeek Harness" PWA .desktop entries
+#     -r <agent>    default-AI restore target (fallback when no state file; default codex)
 
 set -euo pipefail
 
 SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DRY=false
 KEEP_WIDGET=false
-KEEP_PWA=false
+REMOVE_PWA=false
 RESTORE_AGENT="codex"
 while (($#)); do
   case "$1" in
     -n | --dry-run) DRY=true ;;
     --keep-widget) KEEP_WIDGET=true ;;
-    --keep-pwa) KEEP_PWA=true ;;
+    --remove-pwa) REMOVE_PWA=true ;;
     -r | --restore) shift; RESTORE_AGENT=${1:?need agent} ;;
-    -h | --help) sed -n '1,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h | --help) sed -n '1,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "uninstall.sh: unknown argument: $1" >&2; exit 1 ;;
   esac
   shift
@@ -38,8 +44,21 @@ esac
 BIN="$HOME/.local/bin"
 AGENT_FILE="$HOME/.config/omarchy/defaults/agent"
 MENU="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
+BINDFILE="$HOME/.config/hypr/bindings.lua"
+DESKTOP_FILE="$HOME/.local/share/applications/dsh.desktop"
+ICON_ROOT="$HOME/.local/share/icons"
 STATE_DIR="$HOME/.local/state/dsh-omarchy-plugin"
 STATE_FILE="$STATE_DIR/state"
+
+# Restore a pre-install backup (taken by install.sh as <file>.dshplugin.bak).
+# Called only in the real (non-dry) run.
+restore_backup() {
+  local path=$1
+  if [[ -f $path.dshplugin.bak ]]; then
+    mv -f "$path.dshplugin.bak" "$path"
+    echo "== Restored pre-install backup -> $path"
+  fi
+}
 
 # ---------- Default AI restore ----------
 current=""
@@ -47,7 +66,9 @@ current=""
 previous=""
 plugin_set=""
 if [[ -f $STATE_FILE ]]; then
-  . "$STATE_FILE"
+  # Parse the state as plain data; never `source` it.
+  plugin_set=$(sed -n 's/^plugin_set=\(.*\)$/\1/p' "$STATE_FILE" | tail -1)
+  previous=$(sed -n 's/^previous=\(.*\)$/\1/p' "$STATE_FILE" | tail -1)
 fi
 if [[ $current == "dsh" ]]; then
   target="$RESTORE_AGENT"
@@ -58,33 +79,44 @@ if [[ $current == "dsh" ]]; then
   fi
   if $DRY; then
     echo "  [dry-run] default AI would be restored to ${target:-<clear default>}"
-  elif [[ -z $target ]]; then
-    rm -f "$AGENT_FILE"
-    echo "== Cleared the default AI record"
   else
-    # Write the record directly. Never delegate to the stock default-agent
-    # setter here: it may decide the agent is missing and pop up an
-    # interactive install/presentation window (e.g. a Codex one).
-    mkdir -p "$(dirname "$AGENT_FILE")"
-    printf '%s\n' "$target" >"$AGENT_FILE"
-    echo "== Default AI restored to $target"
+    if [[ -z $target ]]; then
+      rm -f "$AGENT_FILE"
+      echo "== Cleared the default AI record"
+    else
+      # Write the record directly. Never delegate to the stock default-agent
+      # setter: it may decide the agent is missing and pop up an interactive
+      # install/presentation window (e.g. a Codex one).
+      mkdir -p "$(dirname "$AGENT_FILE")"
+      printf '%s\n' "$target" >"$AGENT_FILE"
+      echo "== Default AI restored to $target"
+    fi
+    # Only after a real, successful restore: drop the state file.
+    rm -f "$STATE_FILE"
+    rmdir "$STATE_DIR" 2>/dev/null || true
   fi
-  # The recorded previous default has been applied; drop the state file.
-  rm -f "$STATE_FILE"
-  rmdir "$STATE_DIR" 2>/dev/null || true
 else
   echo "== Current default AI is not dsh (=${current:-<unset>}); skipping default restore"
 fi
 
-# ---------- Remove wrappers (only files whose content matches this plugin) ----------
+# ---------- Remove wrappers (content-matched only) and restore backups ----------
 remove_one() {
   local path=$1 sentinel=$2
-  if [[ ! -e $path ]]; then echo "== Skipped (not found): $path"; return; fi
+  if [[ ! -e $path ]]; then
+    echo "== Skipped (not found): $path"
+    return
+  fi
   if ! grep -qF "$sentinel" "$path"; then
     echo "!! Skipped (content differs from this plugin; possibly modified): $path" >&2
     return
   fi
-  if $DRY; then echo "  [dry-run] would delete $path"; else rm -f "$path"; echo "== Deleted $path"; fi
+  if $DRY; then
+    echo "  [dry-run] would delete $path (and restore its pre-install backup, if any)"
+  else
+    rm -f "$path"
+    echo "== Deleted $path"
+    restore_backup "$path"
+  fi
 }
 remove_one "$BIN/dsh-web" 'dsh-web -- Omarchy "AI agent" entry'
 remove_one "$BIN/omarchy-default-agent" 'teaches `omarchy default agent` about the local DSH'
@@ -94,7 +126,31 @@ remove_one "$BIN/dsh-solve-error" 'dsh-solve-error -- collect an error context'
 
 # ---------- Menu entry removal ----------
 if [[ -f $MENU ]]; then
-  python3 - "$MENU" "$(if $DRY; then echo 1; else echo 0; fi)" <<'PY'
+  if [[ -f $MENU.dshplugin.bak ]]; then
+    if $DRY; then
+      echo "  [dry-run] would restore the pre-install menu backup"
+    else
+      python3 - "$MENU" 1 <<'PY'
+# Remove only our keys (marker block) so a later explicit removal is idempotent.
+import sys
+path = sys.argv[1]
+lines = open(path, encoding="utf-8").read().splitlines(keepends=True)
+start = end = None
+for i, ln in enumerate(lines):
+    if "// Local DeepSeek Harness (DSH) -- AI agent entry" in ln:
+        start = i
+    if start is not None and '"setup.default.agent.dsh"' in ln:
+        end = i
+        break
+if start is not None and end is not None and start < end:
+    del lines[start:end + 1]
+    open(path, "w", encoding="utf-8").writelines(lines)
+print("== Removed DSH menu key(s) from current menu before restoring backup")
+PY
+      restore_backup "$MENU"
+    fi
+  else
+    python3 - "$MENU" "$(if $DRY; then echo 1; else echo 0; fi)" <<'PY'
 import sys
 path, dry = sys.argv[1], sys.argv[2] == "1"
 with open(path, encoding="utf-8") as f:
@@ -114,7 +170,6 @@ print(f"== Removing {keys} DSH menu key(s)" + (" (dry-run)" if dry else ""))
 if dry:
     sys.exit(0)
 del lines[start:end + 1]
-# Trim extra blank lines and make sure the file still ends with the closing "}".
 while len(lines) >= 2 and lines[-2].strip() == "" and lines[-1].strip() == "}":
     del lines[-2]
 while lines and lines[-1].strip() == "":
@@ -125,14 +180,37 @@ with open(path, "w", encoding="utf-8") as f:
     f.writelines(lines)
 print("== Menu restored")
 PY
+  fi
 else
   echo "== Skipped (menu file not found)"
 fi
 
 # ---------- Hyprland Agent keybinding block removal ----------
-BINDFILE="$HOME/.config/hypr/bindings.lua"
 if [[ -f $BINDFILE ]]; then
-  python3 - "$BINDFILE" "$(if $DRY; then echo 1; else echo 0; fi)" <<'PY'
+  if [[ -f $BINDFILE.dshplugin.bak ]]; then
+    if $DRY; then
+      echo "  [dry-run] would restore the pre-install bindings backup"
+    else
+      python3 - "$BINDFILE" <<'PY'
+import sys
+path = sys.argv[1]
+lines = open(path, encoding="utf-8").read().splitlines(keepends=True)
+start = end = None
+for i, ln in enumerate(lines):
+    if "-- BEGIN omarchy-dsh-agent" in ln:
+        start = i
+    if start is not None and "-- END omarchy-dsh-agent" in ln:
+        end = i
+        break
+if start is not None and end is not None and start < end:
+    del lines[start:end + 1]
+    open(path, "w", encoding="utf-8").writelines(lines)
+print("== Removed plugin block from bindings.lua before restoring backup")
+PY
+      restore_backup "$BINDFILE"
+    fi
+  else
+    python3 - "$BINDFILE" "$(if $DRY; then echo 1; else echo 0; fi)" <<'PY'
 import sys
 path, dry = sys.argv[1], sys.argv[2] == "1"
 with open(path, encoding="utf-8") as f:
@@ -151,7 +229,6 @@ print("== Removing the Agent keybinding block (restores Omarchy default)" + (" (
 if dry:
     sys.exit(0)
 del lines[start:end + 1]
-# Trim extra blank lines around the removed block
 while len(lines) >= 2 and lines[-2].strip() == "":
     del lines[-2]
 while len(lines) >= 1 and lines[0].strip() == "":
@@ -160,6 +237,7 @@ with open(path, "w", encoding="utf-8") as f:
     f.writelines(lines)
 print("== Keybinding block removed")
 PY
+  fi
   if ! $DRY && command -v hyprctl >/dev/null 2>&1; then
     hyprctl reload >/dev/null 2>&1 \
       && echo "   (hyprctl reload done; binding restored to the Omarchy default)" \
@@ -169,33 +247,49 @@ else
   echo "== Skipped (bindings.lua not found)"
 fi
 
-# ---------- Desktop-app registration removal (dsh.desktop + dsh.png icons) ----------
-DESKTOP_FILE="$HOME/.local/share/applications/dsh.desktop"
-ICON_ROOT="$HOME/.local/share/icons"
-if [[ -f $DESKTOP_FILE ]] && grep -qF "omarchy-dsh-agent" "$DESKTOP_FILE"; then
-  if $DRY; then
-    echo "  [dry-run] would delete desktop entry $DESKTOP_FILE"
+# ---------- Desktop-app registration removal ----------
+if [[ -f $DESKTOP_FILE ]]; then
+  if grep -qF "omarchy-dsh-agent" "$DESKTOP_FILE"; then
+    if $DRY; then
+      echo "  [dry-run] would delete desktop entry $DESKTOP_FILE"
+    else
+      rm -f "$DESKTOP_FILE"
+      echo "== Deleted desktop entry $DESKTOP_FILE"
+      restore_backup "$DESKTOP_FILE"
+      update-desktop-database "$(dirname "$DESKTOP_FILE")" >/dev/null 2>&1 || true
+    fi
   else
-    rm -f "$DESKTOP_FILE"
-    echo "== Deleted desktop entry $DESKTOP_FILE"
-    update-desktop-database "$(dirname "$DESKTOP_FILE")" >/dev/null 2>&1 || true
+    echo "!! Desktop entry differs from this plugin (possibly modified); skipping: $DESKTOP_FILE" >&2
   fi
-elif [[ -f $DESKTOP_FILE ]]; then
-  echo "!! Desktop entry differs from this plugin (possibly modified); skipping: $DESKTOP_FILE" >&2
 else
   echo "== Skipped (dsh.desktop not found)"
 fi
-if $DRY; then
-  echo "  [dry-run] would delete dsh.png icons: $ICON_ROOT/hicolor/{48,64,128,256,512}x*/apps/dsh.png"
-else
-  rm -f "$ICON_ROOT"/hicolor/*x*/apps/dsh.png 2>/dev/null || true
+
+# ---------- Icon removal (hash-matched against the bundled icons only) ----------
+removed_any=false
+for size in 48 64 128 256 512; do
+  icon="$ICON_ROOT/hicolor/${size}x${size}/apps/dsh.png"
+  bundle="$SELF_DIR/files/icons/hicolor/${size}x${size}/apps/dsh.png"
+  if [[ ! -f $icon ]]; then
+    continue
+  fi
+  if [[ -f $bundle ]] && [[ $(sha256sum "$icon" | awk '{print $1}') == $(sha256sum "$bundle" | awk '{print $1}') ]]; then
+    if $DRY; then
+      echo "  [dry-run] would delete icon (hash matches installed copy): $icon"
+    else
+      rm -f "$icon"
+      echo "== Deleted icon (hash matches installed copy): $icon"
+      removed_any=true
+    fi
+  else
+    echo "!! Icon differs from the installed copy or no bundle reference; skipping: $icon" >&2
+  fi
+done
+if ! $DRY && $removed_any; then
   gtk-update-icon-cache -f "$ICON_ROOT/hicolor" >/dev/null 2>&1 || true
-  echo "== Deleted dsh.png icons and refreshed the cache"
 fi
 
 # ---------- Bar widget (omarchy plugin system) removal ----------
-# The bar icon "dsh-launcher" is installed and managed by `omarchy plugin add`,
-# not by install.sh; remove it here too so uninstall leaves nothing behind.
 WIDGET_ID="dsh-launcher"
 WIDGET_DIR="$HOME/.config/omarchy/plugins/$WIDGET_ID"
 if $KEEP_WIDGET; then
@@ -219,49 +313,38 @@ else
   echo "== No bar widget installed (plugin-managed dsh-launcher not found)"
 fi
 
-# ---------- Chromium PWA entry cleanup (DeepSeek Harness) ----------
-# The DSH web UI may have been "installed as an app" from Chromium, which drops a
-# PWA .desktop entry that install.sh never creates. Remove those entries too so
-# uninstall leaves no DeepSeek Harness rows in app menus. The PWA itself stays
-# inside Chromium and can be re-added from the browser at any time.
-# Guard: Name mentions DeepSeek Harness AND Exec is a chromium --app-id launcher.
-remove_pwa_entry() {
-  local file=$1
-  if [[ -f $file ]] \
-      && grep -qiE '^Name=(DeepSeek Harness|DSH)' "$file" \
-      && grep -qE '^Exec=.*(chromium|chrome|google-chrome)' "$file" \
-      && grep -qE -- '--app-id=' "$file"; then
-    if $DRY; then
-      echo "  [dry-run] would delete PWA desktop entry $file"
-    else
-      rm -f "$file"
-      echo "== Deleted PWA desktop entry $file"
-    fi
-    return 0
-  fi
-  return 1
-}
-if $KEEP_PWA; then
-  echo "== Skipped Chromium PWA cleanup (--keep-pwa)"
-else
+# ---------- Chromium PWA entry cleanup (opt-in) ----------
+# install.sh never creates the Chromium "DeepSeek Harness" PWA, so by default we
+# do not delete it either -- only with an explicit --remove-pwa.
+if $REMOVE_PWA; then
   found_pwa=false
   for f in "$HOME/.local/share/applications"/chrome-*-Default.desktop "$HOME"/chrome-*-Default.desktop; do
-    remove_pwa_entry "$f" && found_pwa=true
+    if [[ -f $f ]] \
+        && grep -qiE '^Name=(DeepSeek Harness|DSH)' "$f" \
+        && grep -qE '^Exec=.*(chromium|chrome|google-chrome)' "$f" \
+        && grep -qE -- '--app-id=' "$f"; then
+      if $DRY; then
+        echo "  [dry-run] would delete PWA desktop entry $f"
+      else
+        rm -f "$f"
+        echo "== Deleted PWA desktop entry $f"
+      fi
+      found_pwa=true
+    fi
   done
   if ! $DRY && $found_pwa; then
     update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
   fi
-  if ! $found_pwa && [[ $KEEP_PWA == false ]]; then
+  if ! $found_pwa; then
     echo "== No DeepSeek Harness PWA desktop entry found; skipping"
   fi
+else
+  echo "== Chromium PWA entry kept (pass --remove-pwa to delete it)"
 fi
 
 # ---------- Leftover cleanup hints ----------
 if ! $DRY; then
   echo
-  echo "== Uninstall complete. Optional leftover cleanup:"
-  echo "   rm -f $BIN/dsh-web.dshplugin.bak $BIN/dsh-solve-error.dshplugin.bak $BIN/omarchy-default-agent.dshplugin.bak"
-  echo "   rm -f $BIN/omarchy-agent.dshplugin.bak $BIN/omarchy.dshplugin.bak"
-  echo "   rm -f \"$MENU.dshplugin.bak\" \"$BINDFILE.dshplugin.bak\""
-  echo "   rm -rf ~/.local/state/dsh                 # DSH run log"
+  echo "== Uninstall complete."
+  echo "   Optional leftover cleanup: rm -rf ~/.local/state/dsh   # DSH run log"
 fi

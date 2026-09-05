@@ -62,6 +62,18 @@ files/
 | `--no-bootstrap` | 跳过 `pnpm install` |
 | `-n` / `--dry-run` | 干跑，只打印将执行的动作 |
 
+## 安全与隐私说明
+
+- **锁定 DSH 源码**：`install.sh` 克隆 DeepSeek Harness 后 detached-checkout 到内置锁定的
+  40 位 commit（`DSH_COMMIT`，默认 `d347e703…`）并校验 HEAD；自定义 `--repo-url` 必须配
+  `--repo-rev <40位>`，依赖用 `pnpm install --frozen-lockfile`。升级需显式改锁并重跑完整回路。
+- **`--dry-run` 不产生任何写入**：连目录也不会创建。
+- **卸载更保守**：只删除内容/哈希与插件一致的文件；自动还原安装前备份（`*.dshplugin.bak`）；
+  Chromium 的 DeepSeek Harness PWA 默认保留（仅 `--remove-pwa` 才删）；绝不弹窗。
+- **`dsh-solve-error` 隐私**：发送前先脱敏（密钥/token/邮箱等）并要求交互确认（`-y` 跳过）；
+  任务提示声明上下文为不可信数据。headless 会把脱敏后的日志发给**你配置的模型服务**
+  （DSH 默认公共 DeepSeek API），并非只在本机。
+
 ## 图标说明
 
 Omarchy 菜单的**静态菜单项只能显示字体图标**（无法放 PNG），因此顶层不放字形

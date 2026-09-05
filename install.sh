@@ -3,7 +3,9 @@
 # omarchy-dsh-agent install.sh
 #
 # One-shot installer: register a local DeepSeek Harness (DSH) as an Omarchy AI agent.
-#   1) Prepare the DSH source: git clone into ~/deepseek-harness when missing (override with --repo-dir / --repo-url)
+#   1) Prepare the DSH source: clone into ~/deepseek-harness when missing, then
+#      detached-checkout a pinned 40-hex commit (DSH_COMMIT / --repo-rev) and verify
+#      HEAD; dependencies are installed with `pnpm install --frozen-lockfile`
 #   2) Install the launcher ~/.local/bin/dsh-web and three user-level wrappers (omarchy-default-agent / omarchy-agent / omarchy)
 #   3) Merge menu entries into ~/.config/omarchy/extensions/omarchy-menu.jsonc (idempotent), rebind the Hyprland
 #      default-AI key (SUPER + SHIFT + CTRL + A) to the wrapper's absolute path (skip with --no-keybinding),
@@ -15,8 +17,12 @@
 # All writes stay under the user home; /usr/share/omarchy is never modified. Re-runnable (idempotent).
 #
 # Usage:
-#   ./install.sh [--default] [--with-widget] [--widget-url URL] [--repo-dir PATH] [--repo-url URL]
+#   ./install.sh [--default] [--with-widget] [--widget-url URL]
+#                [--repo-dir PATH] [--repo-url URL] [--repo-rev <40-hex>]
 #                [--no-bootstrap] [--no-keybinding] [--dry-run]
+#
+# The DSH checkout is pinned to commit $DSH_COMMIT (env-overridable). A custom
+# --repo-url without an explicit --repo-rev is refused.
 
 set -euo pipefail
 
@@ -31,6 +37,10 @@ WITH_WIDGET=false
 WIDGET_URL="https://github.com/bforecast/omarchy-dsh-agent.git"
 REPO_DIR="${DSH_REPO_DIR:-$HOME/deepseek-harness}"
 REPO_URL="https://github.com/deepseek-ai/deepseek-harness.git"
+# Pinned DeepSeek Harness commit (full SHA) fetched from the upstream default
+# branch. Bump this deliberately and re-run the full install/uninstall cycle.
+DSH_COMMIT="${DSH_COMMIT:-d347e703908d0406b7a7ef80e3a0e594d86b2215}"
+REPO_REV="${DSH_REPO_REV:-}"
 
 while (($#)); do
   case "$1" in
@@ -39,6 +49,7 @@ while (($#)); do
     --widget-url) shift; WIDGET_URL=${1:?--widget-url needs a URL} ;;
     --repo-dir) shift; REPO_DIR=${1:?--repo-dir needs a path} ;;
     --repo-url) shift; REPO_URL=${1:?--repo-url needs a URL} ;;
+    --repo-rev) shift; REPO_REV=${1:?--repo-rev needs a 40-hex commit} ;;
     --no-bootstrap) NO_BOOTSTRAP=true ;;
     --no-keybinding) NO_KEYBINDING=true ;;
     --dry-run | -n) DRY=true ;;
@@ -54,24 +65,51 @@ done
 say() { if $DRY; then echo "  [dry-run] $*"; else echo "$*"; fi; }
 do_or_dry() { if $DRY; then echo "  [dry-run] would run: $*"; else "$@"; fi; }
 
-mkdir -p "$HOME/.local/bin"
+do_or_dry mkdir -p "$HOME/.local/bin"
 
-# ---------- 1) DSH source ----------
+# ---------- 1) DSH source (pinned, detached) ----------
+is_hex40() { [[ $1 =~ ^[0-9a-f]{40}$ ]]; }
 if [[ ! -f "$REPO_DIR/apps/cli/src/bin.ts" ]]; then
   for c in git; do command -v "$c" >/dev/null 2>&1 || { echo "install.sh: missing '$c'" >&2; exit 1; }; done
-  echo "== DSH source not found ($REPO_DIR); cloning $REPO_URL"
-  do_or_dry git clone --depth 1 "$REPO_URL" "$REPO_DIR"
+  if [[ $REPO_URL != "https://github.com/deepseek-ai/deepseek-harness.git" && -z $REPO_REV ]]; then
+    echo "install.sh: a custom --repo-url requires an explicit --repo-rev <40-hex-commit>" >&2
+    exit 1
+  fi
+  pin=${REPO_REV:-$DSH_COMMIT}
+  if ! is_hex40 "$pin"; then
+    echo "install.sh: invalid commit pin '$pin' (expected 40 lowercase hex chars; set --repo-rev or DSH_COMMIT)" >&2
+    exit 1
+  fi
+  echo "== DSH source not found ($REPO_DIR); cloning $REPO_URL at pinned commit $pin"
+  if $DRY; then
+    echo "  [dry-run] would clone $REPO_URL and detached-checkout commit $pin"
+  else
+    git clone "$REPO_URL" "$REPO_DIR" || { echo "install.sh: clone failed" >&2; exit 1; }
+    git -C "$REPO_DIR" fetch --depth 1 origin "$pin" || {
+      echo "install.sh: could not fetch pinned commit $pin" >&2
+      rm -rf "$REPO_DIR"
+      exit 1
+    }
+    git -C "$REPO_DIR" checkout --detach "$pin"
+    got=$(git -C "$REPO_DIR" rev-parse HEAD)
+    if [[ $got != "$pin" ]]; then
+      echo "install.sh: pinned checkout verification failed (HEAD=$got != $pin); removing incomplete clone" >&2
+      rm -rf "$REPO_DIR"
+      exit 1
+    fi
+    echo "== Verified detached HEAD at $pin"
+  fi
   say "DSH source ready: $REPO_DIR"
 else
-  echo "== Reusing existing DSH source: $REPO_DIR"
+  echo "== Reusing existing DSH source: $REPO_DIR (not re-pinned here; refresh it deliberately)"
 fi
 
 if ! $NO_BOOTSTRAP && [[ -f "$REPO_DIR/apps/cli/src/bin.ts" && ! -d "$REPO_DIR/node_modules" ]]; then
   if command -v pnpm >/dev/null 2>&1; then
-    echo "== Installing DSH dependencies (pnpm install)…"
-    (cd "$REPO_DIR" && do_or_dry pnpm install)
+    echo "== Installing DSH dependencies (pnpm install --frozen-lockfile)…"
+    (cd "$REPO_DIR" && do_or_dry pnpm install --frozen-lockfile)
   else
-    echo "!! pnpm not found; skipping dependency install. Run manually before starting dsh: cd $REPO_DIR && pnpm install" >&2
+    echo "!! pnpm not found; skipping dependency install. Run manually before starting dsh: cd $REPO_DIR && pnpm install --frozen-lockfile" >&2
   fi
 fi
 
@@ -101,29 +139,36 @@ menu="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
 if [[ -f $menu ]] && grep -qF "// Local DeepSeek Harness (DSH) -- AI agent entry" "$menu"; then
   echo "== Menu already contains the DSH entry; skipping"
 else
-  mkdir -p "$(dirname "$menu")"
+  do_or_dry mkdir -p "$(dirname "$menu")"
   [[ -f $menu ]] && do_or_dry cp "$menu" "$menu.dshplugin.bak"
-  python3 - "$menu" "$FILES/menu-entries.jsonc" "$DRY" <<'PY'
-import sys, json, re
+  python3 - "$menu" "$FILES/menu-entries.jsonc" "$(if $DRY; then echo 1; else echo 0; fi)" <<'PY'
+import json, os, sys, tempfile
 
-menu_path, snippet_path, dry = sys.argv[1], sys.argv[2], sys.argv[3] == "True"
-with open(menu_path, encoding="utf-8") as f:
-    content = f.read()
+menu_path, snippet_path, dry = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
+try:
+    with open(menu_path, encoding="utf-8") as f:
+        content = f.read()
+except FileNotFoundError:
+    content = "{\n}"          # missing file: start from an empty object
+
 with open(snippet_path, encoding="utf-8") as f:
     snippet = f.read().rstrip("\n")
 
-# Heal a missing closing brace (a previous merge/removal may have consumed it),
-# then insert the snippet right before the final "}".
+# Heal a missing closing brace, then append the snippet as new top-level
+# members before the final "}", inserting a separator comma when needed.
 text = content
 if not text.rstrip().endswith("}"):
     text = text.rstrip() + "\n}\n"
 idx = text.rfind("}")
 if idx == -1:
     sys.exit("install: menu file has no closing '}'; cannot merge, please check " + menu_path)
-new = text[:idx] + "\n" + snippet + text[idx:]
+prefix = text[:idx].rstrip()
+last = prefix[-1:] if prefix else ""
+sep = "" if last in ("{", ",") else ","
+new = prefix + sep + "\n" + snippet + "\n" + text[idx:]
 
 def strip_jsonc(text):
-    out, i, in_str = [], 0, False
+    out, i = [], 0
     while i < len(text):
         c = text[i]
         if c == '"':
@@ -140,10 +185,17 @@ def strip_jsonc(text):
         out.append(c); i += 1
     return "".join(out)
 
-json.loads(strip_jsonc(new))  # validate: fail loudly if broken
+json.loads(strip_jsonc(new))  # validate before replacing anything
 if not dry:
-    with open(menu_path, "w", encoding="utf-8") as f:
-        f.write(new)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(menu_path) or ".", prefix=".menu.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(new)
+        os.replace(tmp, menu_path)   # atomic
+    except Exception:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
 print("== Menu merged with DSH entry")
 PY
 fi
@@ -156,7 +208,7 @@ if ! $NO_KEYBINDING; then
     if [[ -f $bindfile ]] && grep -qF -- "-- BEGIN omarchy-dsh-agent" "$bindfile"; then
       echo "== Keybinding already present; skipping"
     else
-      mkdir -p "$(dirname "$bindfile")"
+      do_or_dry mkdir -p "$(dirname "$bindfile")"
       [[ -f $bindfile ]] && do_or_dry cp "$bindfile" "$bindfile.dshplugin.bak"
       block=$(cat <<LUA
 
@@ -193,7 +245,7 @@ fi
 desktop_dir="$HOME/.local/share/applications"
 desktop_file="$desktop_dir/dsh.desktop"
 icon_root="$HOME/.local/share/icons"
-mkdir -p "$desktop_dir"
+do_or_dry mkdir -p "$desktop_dir"
 if [[ -f $desktop_file ]] && grep -qF "DeepSeek Harness" "$desktop_file" \
     && grep -qF "$HOME/.local/bin/dsh-web" "$desktop_file"; then
   echo "== DSH desktop entry already present; skipping"
@@ -251,7 +303,7 @@ if $SET_DEFAULT; then
     echo "== Default AI is already dsh"
   else
     do_or_dry mkdir -p "$state_dir"
-    do_or_dry bash -c "printf 'plugin_default_set=1\nprevious_agent=%q\n' \"\$0\" > \"\$1\"" "$previous" "$state_file"
+    do_or_dry bash -c "printf 'plugin_set=1\nprevious=%s\n' \"\$0\" > \"\$1\"" "$previous" "$state_file"
     do_or_dry "$HOME/.local/bin/omarchy-default-agent" dsh
     echo "== Default AI set to dsh${previous:+ (previous default: $previous; restored on uninstall)}"
   fi

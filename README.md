@@ -65,6 +65,22 @@ files/
 | `--no-keybinding` | Skip the Hyprland Agent-key rebinding |
 | `-n` / `--dry-run` | Print the actions that would be taken, change nothing |
 
+## Security & privacy notes
+
+- **Pinned DSH source**: `install.sh` clones DeepSeek Harness and detached-checks out a
+  pinned 40-hex commit (`DSH_COMMIT`, default `d347e703…`) and verifies HEAD before
+  installing. A custom `--repo-url` is refused without an explicit `--repo-rev <40-hex>`.
+  Dependencies install with `pnpm install --frozen-lockfile`. Bump the pin deliberately and
+  re-run the full install/uninstall cycle.
+- **`--dry-run` changes nothing**: it performs no writes and creates no directories.
+- **Conservative uninstall**: `uninstall.sh` removes only files that content/hash-match what
+  the plugin installed, restores the `*.dshplugin.bak` backups taken before overwrites,
+  keeps the Chromium "DeepSeek Harness" PWA unless `--remove-pwa`, and never spawns windows.
+- **`dsh-solve-error` privacy**: diagnostics are redacted (secrets/keys/tokens/emails) before
+  anything is sent, sending is confirmed interactively unless `-y/--yes`, and the task states
+  the context is untrusted data. The headless run sends the redacted context to your
+  **configured model provider** (DSH defaults to the public DeepSeek API), not only "local".
+
 ## About the icon
 
 Omarchy **static menu items can only render font glyphs** (no PNGs), so the package
