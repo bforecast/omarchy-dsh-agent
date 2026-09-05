@@ -17,8 +17,14 @@ if [[ -z $key ]]; then
 fi
 [[ -n $key ]] || exit 1
 
-out=$(curl -fsS --max-time 10 https://api.deepseek.com/user/balance \
-      -H "Authorization: Bearer $key" 2>/dev/null) || exit 1
+# Pass the header via a private temp file so the API key never appears in the
+# process command line (argv is visible to other local processes).
+hd=$(mktemp) || exit 1
+trap 'rm -f "$hd"' EXIT
+chmod 600 "$hd"
+printf 'Authorization: Bearer %s\n' "$key" >"$hd"
+out=$(curl -fsS --max-time 10 https://api.deepseek.com/user/balance -H "@$hd" 2>/dev/null) || exit 1
+rm -f "$hd"
 
 python3 - "$out" <<'PY'
 import json, sys
