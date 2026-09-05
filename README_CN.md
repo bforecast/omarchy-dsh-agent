@@ -64,15 +64,17 @@ files/
 
 ## 安全与隐私说明
 
-- **锁定 DSH 源码**：`install.sh` 克隆 DeepSeek Harness 后 detached-checkout 到内置锁定的
-  40 位 commit（`DSH_COMMIT`，默认 `d347e703…`）并校验 HEAD；自定义 `--repo-url` 必须配
-  `--repo-rev <40位>`，依赖用 `pnpm install --frozen-lockfile`。升级需显式改锁并重跑完整回路。
+- **锁定 DSH 源码**：`install.sh` 用 `git init` + 只 fetch 锁定的 40 位 commit
+  （`DSH_COMMIT`，默认 `d347e703…`），在临时目录 detached-checkout 并校验 HEAD 后原子搬入；
+  已有但非 checkout 的目录直接拒绝不触碰；已有 checkout 须与锁一致或加 `--use-existing`；
+  自定义 `--repo-url` 必须配 `--repo-rev <40位>`，依赖用 `pnpm install --frozen-lockfile`。
 - **`--dry-run` 不产生任何写入**：连目录也不会创建。
-- **卸载更保守**：只删除内容/哈希与插件一致的文件；自动还原安装前备份（`*.dshplugin.bak`）；
-  Chromium 的 DeepSeek Harness PWA 默认保留（仅 `--remove-pwa` 才删）；绝不弹窗。
-- **`dsh-solve-error` 隐私**：发送前先脱敏（密钥/token/邮箱等）并要求交互确认（`-y` 跳过）；
-  任务提示声明上下文为不可信数据。headless 会把脱敏后的日志发给**你配置的模型服务**
-  （DSH 默认公共 DeepSeek API），并非只在本机。
+- **卸载更保守**：只删除内容/哈希与插件一致的文件；还原安装前覆盖 wrapper/桌面项/图标的备份；
+  图标仅哈希匹配才删；Chromium PWA 默认保留（仅 `--remove-pwa` 才删）；菜单与按键改为
+  **外科式删除插件块**（保留安装后用户改动）；绝不弹窗。
+- **`dsh-solve-error` 隐私**：发送前脱敏；交互运行需确认，**非交互默认拒绝（需 `-y`）**；
+  状态目录 `0700`、转储 `0600`；任务提示声明上下文为不可信数据。headless 把脱敏日志发给
+  **你配置的模型服务**（DSH 默认公共 DeepSeek API），并非只在本机。
 
 ## 图标说明
 

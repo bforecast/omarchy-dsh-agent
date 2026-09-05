@@ -19,10 +19,12 @@
 # Usage:
 #   ./install.sh [--default] [--with-widget] [--widget-url URL]
 #                [--repo-dir PATH] [--repo-url URL] [--repo-rev <40-hex>]
-#                [--no-bootstrap] [--no-keybinding] [--dry-run]
+#                [--use-existing] [--no-bootstrap] [--no-keybinding] [--dry-run]
 #
 # The DSH checkout is pinned to commit $DSH_COMMIT (env-overridable). A custom
 # --repo-url without an explicit --repo-rev is refused.
+# Reusing an existing DSH checkout requires it to sit at the pinned commit,
+# or an explicit --use-existing (which skips HEAD verification).
 
 set -euo pipefail
 
@@ -34,6 +36,7 @@ SET_DEFAULT=false
 NO_BOOTSTRAP=false
 NO_KEYBINDING=false
 WITH_WIDGET=false
+USE_EXISTING=false
 WIDGET_URL="https://github.com/bforecast/omarchy-dsh-agent.git"
 REPO_DIR="${DSH_REPO_DIR:-$HOME/deepseek-harness}"
 REPO_URL="https://github.com/deepseek-ai/deepseek-harness.git"
@@ -50,6 +53,7 @@ while (($#)); do
     --repo-dir) shift; REPO_DIR=${1:?--repo-dir needs a path} ;;
     --repo-url) shift; REPO_URL=${1:?--repo-url needs a URL} ;;
     --repo-rev) shift; REPO_REV=${1:?--repo-rev needs a 40-hex commit} ;;
+    --use-existing) USE_EXISTING=true ;;
     --no-bootstrap) NO_BOOTSTRAP=true ;;
     --no-keybinding) NO_KEYBINDING=true ;;
     --dry-run | -n) DRY=true ;;
@@ -69,42 +73,59 @@ do_or_dry mkdir -p "$HOME/.local/bin"
 
 # ---------- 1) DSH source (pinned, detached) ----------
 is_hex40() { [[ $1 =~ ^[0-9a-f]{40}$ ]]; }
+pin=${REPO_REV:-$DSH_COMMIT}
+if ! is_hex40 "$pin"; then
+  echo "install.sh: invalid commit pin '$pin' (expected 40 lowercase hex chars; set --repo-rev or DSH_COMMIT)" >&2
+  exit 1
+fi
+
 if [[ ! -f "$REPO_DIR/apps/cli/src/bin.ts" ]]; then
+  # Target path exists but is not a usable DSH checkout: refuse and never touch it.
+  if [[ -e $REPO_DIR ]]; then
+    echo "install.sh: $REPO_DIR exists but is not a valid DSH checkout; refusing to modify it." >&2
+    echo "   Remove it yourself or point --repo-dir elsewhere." >&2
+    exit 1
+  fi
   for c in git; do command -v "$c" >/dev/null 2>&1 || { echo "install.sh: missing '$c'" >&2; exit 1; }; done
   if [[ $REPO_URL != "https://github.com/deepseek-ai/deepseek-harness.git" && -z $REPO_REV ]]; then
     echo "install.sh: a custom --repo-url requires an explicit --repo-rev <40-hex-commit>" >&2
     exit 1
   fi
-  pin=${REPO_REV:-$DSH_COMMIT}
-  if ! is_hex40 "$pin"; then
-    echo "install.sh: invalid commit pin '$pin' (expected 40 lowercase hex chars; set --repo-rev or DSH_COMMIT)" >&2
-    exit 1
-  fi
   echo "== DSH source not found ($REPO_DIR); preparing it at pinned commit $pin"
+  tmpdir="$REPO_DIR.dsh-tmp.$$"
   if $DRY; then
-    echo "  [dry-run] would git init $REPO_DIR, fetch commit $pin from $REPO_URL, and detached-checkout it"
+    echo "  [dry-run] would prepare $tmpdir (git init, fetch commit $pin, detached checkout, verify) then atomically rename it to $REPO_DIR"
   else
-    # Fetch the exact pinned commit only: no branch/tag clone is ever built or
-    # executed, so the reviewed 40-hex SHA is the only source that runs.
-    git init -q "$REPO_DIR" || { echo "install.sh: could not git init $REPO_DIR" >&2; exit 1; }
-    git -C "$REPO_DIR" remote add origin "$REPO_URL" 2>/dev/null || true
-    if ! git -C "$REPO_DIR" fetch --depth 1 origin "$pin"; then
+    # Build in a sibling temporary directory first; only our own temp dir is
+    # ever cleaned up, and the final rename is atomic.
+    git init -q "$tmpdir" || { echo "install.sh: could not git init $tmpdir" >&2; exit 1; }
+    git -C "$tmpdir" remote add origin "$REPO_URL" 2>/dev/null || true
+    if ! git -C "$tmpdir" fetch --depth 1 origin "$pin"; then
       echo "install.sh: could not fetch pinned commit $pin from $REPO_URL" >&2
-      rm -rf "$REPO_DIR"
+      rm -rf "$tmpdir"
       exit 1
     fi
-    git -C "$REPO_DIR" checkout --detach "$pin"
-    got=$(git -C "$REPO_DIR" rev-parse HEAD)
+    git -C "$tmpdir" checkout --detach "$pin"
+    got=$(git -C "$tmpdir" rev-parse HEAD)
     if [[ $got != "$pin" ]]; then
-      echo "install.sh: pinned checkout verification failed (HEAD=$got != $pin); removing incomplete checkout" >&2
-      rm -rf "$REPO_DIR"
+      echo "install.sh: pinned checkout verification failed (HEAD=$got != $pin); removing temporary directory" >&2
+      rm -rf "$tmpdir"
       exit 1
     fi
-    echo "== Verified detached HEAD at $pin"
+    mv "$tmpdir" "$REPO_DIR"
+    echo "== Verified detached HEAD at $pin and moved checkout into place"
   fi
   say "DSH source ready: $REPO_DIR"
 else
-  echo "== Reusing existing DSH source: $REPO_DIR (not re-pinned here; refresh it deliberately)"
+  # Existing checkout: honour the pin unless the user explicitly opts out.
+  echo "== Found existing DSH source: $REPO_DIR"
+  got=$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)
+  if [[ -n $got && $got != "$pin" && $USE_EXISTING == false ]]; then
+    echo "install.sh: existing checkout is at $got, not the pinned commit $pin." >&2
+    echo "   Update it to $pin, remove it (a fresh checkout is pinned automatically), or pass --use-existing to accept it as-is." >&2
+    exit 1
+  fi
+  echo "== Using existing DSH checkout${got:+ (HEAD ${got:0:7})}"
 fi
 
 if ! $NO_BOOTSTRAP && [[ -f "$REPO_DIR/apps/cli/src/bin.ts" && ! -d "$REPO_DIR/node_modules" ]]; then
@@ -285,8 +306,13 @@ if [[ -d $FILES/icons ]]; then
   else
     while IFS= read -r icon; do
       rel="${icon#"$FILES/icons/"}"
-      mkdir -p "$icon_root/$(dirname "$rel")"
-      cp "$icon" "$icon_root/$rel"
+      target="$icon_root/$rel"
+      mkdir -p "$(dirname "$target")"
+      if [[ -e $target ]] && ! cmp -s "$icon" "$target"; then
+        cp "$target" "$target.dshplugin.bak"
+        echo "   (backed up existing icon -> $target.dshplugin.bak)"
+      fi
+      cp "$icon" "$target"
     done < <(find "$FILES/icons" -type f -name "*.png")
     gtk-update-icon-cache -f "$icon_root/hicolor" >/dev/null 2>&1 || true
     update-desktop-database "$desktop_dir" >/dev/null 2>&1 || true

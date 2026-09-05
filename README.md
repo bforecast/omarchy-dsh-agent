@@ -67,19 +67,24 @@ files/
 
 ## Security & privacy notes
 
-- **Pinned DSH source**: `install.sh` clones DeepSeek Harness and detached-checks out a
-  pinned 40-hex commit (`DSH_COMMIT`, default `d347e703…`) and verifies HEAD before
-  installing. A custom `--repo-url` is refused without an explicit `--repo-rev <40-hex>`.
-  Dependencies install with `pnpm install --frozen-lockfile`. Bump the pin deliberately and
-  re-run the full install/uninstall cycle.
+- **Pinned DSH source**: `install.sh` prepares DeepSeek Harness by `git init` + fetching
+  exactly the pinned 40-hex commit (`DSH_COMMIT`, default `d347e703…`) into a sibling
+  temporary directory, detached-checks out and verifies HEAD, then atomically moves it into
+  place. Existing non-checkout paths are refused untouched; an existing checkout must sit at
+  the pin or be accepted with `--use-existing`. A custom `--repo-url` is refused without an
+  explicit `--repo-rev <40-hex>`. Dependencies install with `pnpm install --frozen-lockfile`.
 - **`--dry-run` changes nothing**: it performs no writes and creates no directories.
 - **Conservative uninstall**: `uninstall.sh` removes only files that content/hash-match what
-  the plugin installed, restores the `*.dshplugin.bak` backups taken before overwrites,
-  keeps the Chromium "DeepSeek Harness" PWA unless `--remove-pwa`, and never spawns windows.
+  the plugin installed; it restores the `*.dshplugin.bak` backups taken before overwriting
+  wrappers/desktop/icons, deletes icons only when they hash-match ours, keeps the Chromium
+  "DeepSeek Harness" PWA unless `--remove-pwa`, edits menu and Hyprland bindings **surgically**
+  (plugin marker blocks only, so post-install user edits survive), and never spawns windows.
 - **`dsh-solve-error` privacy**: diagnostics are redacted (secrets/keys/tokens/emails) before
-  anything is sent, sending is confirmed interactively unless `-y/--yes`, and the task states
-  the context is untrusted data. The headless run sends the redacted context to your
-  **configured model provider** (DSH defaults to the public DeepSeek API), not only "local".
+  anything is sent; interactive runs ask for confirmation and **non-interactive runs refuse
+  unless `-y/--yes`** is passed; the state directory is `0700` and the transcript `0600`; the
+  task states the context is untrusted data. The headless run sends the redacted context to
+  your **configured model provider** (DSH defaults to the public DeepSeek API), not only
+  "local".
 
 ## About the icon
 

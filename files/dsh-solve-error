@@ -112,12 +112,19 @@ if $show_context; then
   exit 0
 fi
 
-# Interactive consent before the context leaves the machine.
-if [[ $mode != "text" && -t 0 && -t 1 && $auto_yes == false ]]; then
-  echo "About to send diagnostics (see --show-context for the redacted preview) to your configured model provider." >&2
-  read -r -p "Send? [y/N] " ans <&1 || ans=n
-  if [[ ${ans,,} != "y" && ${ans,,} != "yes" ]]; then
-    echo "Aborted (no data sent). Use --show-context to review, -y/--yes to skip this prompt." >&2
+# Fail-closed consent before the context leaves the machine.
+#   interactive: ask for confirmation;
+#   non-interactive (scripts/pipes/automation): refuse unless -y/--yes is given.
+if [[ $auto_yes == false ]]; then
+  if [[ -t 0 && -t 1 ]]; then
+    echo "About to send diagnostics (see --show-context for the redacted preview) to your configured model provider." >&2
+    read -r -p "Send? [y/N] " ans <&1 || ans=n
+    if [[ ${ans,,} != "y" && ${ans,,} != "yes" ]]; then
+      echo "Aborted (no data sent). Use --show-context to review, -y/--yes to skip this prompt." >&2
+      exit 1
+    fi
+  else
+    echo "dsh-solve-error: non-interactive run would send diagnostics to the model provider; pass -y/--yes to allow it." >&2
     exit 1
   fi
 fi
@@ -163,13 +170,17 @@ fi
 STATE_DIR="$HOME/.local/state/dsh-omarchy-agent"
 TRANSCRIPT="$STATE_DIR/last-error-solve.txt"
 
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR" 2>/dev/null || true
+umask 077
+
 cd "$DSH_REPO" || exit 1
 echo "dsh-solve-error: asking DSH to analyze the error (headless run, may take a while)…" >&2
-mkdir -p "$STATE_DIR"
 # Reasoning streams to stderr (live, activity feedback); the final assistant
 # message (markdown) is stdout and is captured cleanly for pretty rendering.
 "${cmd[@]}" >"$TRANSCRIPT" 2> >(sed -u 's/^/  · /' >&2)
 rc=$?
+chmod 600 "$TRANSCRIPT" 2>/dev/null || true
 if (( rc != 0 )); then
   echo "dsh-solve-error: DSH exited with $rc (see reasoning above)." >&2
 fi

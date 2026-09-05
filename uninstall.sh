@@ -4,7 +4,9 @@
 # --with-widget step) installed, conservatively:
 #   * only removes files whose content matches this plugin;
 #   * restores the .dshplugin.bak backups that install.sh took before it
-#     overwrote pre-existing files;
+#     overwrote pre-existing wrappers/desktop/icons;
+#   * edits menu/bindings surgically (plugin marker blocks only) so post-install
+#     user changes are kept;
 #   * only deletes icons that hash-match the ones we installed;
 #   * never touches the Chromium-installed "DeepSeek Harness" PWA unless
 #     --remove-pwa is passed;
@@ -124,33 +126,9 @@ remove_one "$BIN/omarchy-agent" 'when the default agent is the local DSH agent'
 remove_one "$BIN/omarchy" 'User extension wrapper for the `omarchy` CLI'
 remove_one "$BIN/dsh-solve-error" 'dsh-solve-error -- collect an error context'
 
-# ---------- Menu entry removal ----------
+# ---------- Menu entry removal (surgical: marker block only) ----------
 if [[ -f $MENU ]]; then
-  if [[ -f $MENU.dshplugin.bak ]]; then
-    if $DRY; then
-      echo "  [dry-run] would restore the pre-install menu backup"
-    else
-      python3 - "$MENU" 1 <<'PY'
-# Remove only our keys (marker block) so a later explicit removal is idempotent.
-import sys
-path = sys.argv[1]
-lines = open(path, encoding="utf-8").read().splitlines(keepends=True)
-start = end = None
-for i, ln in enumerate(lines):
-    if "// Local DeepSeek Harness (DSH) -- AI agent entry" in ln:
-        start = i
-    if start is not None and '"setup.default.agent.dsh"' in ln:
-        end = i
-        break
-if start is not None and end is not None and start < end:
-    del lines[start:end + 1]
-    open(path, "w", encoding="utf-8").writelines(lines)
-print("== Removed DSH menu key(s) from current menu before restoring backup")
-PY
-      restore_backup "$MENU"
-    fi
-  else
-    python3 - "$MENU" "$(if $DRY; then echo 1; else echo 0; fi)" <<'PY'
+  python3 - "$MENU" "$(if $DRY; then echo 1; else echo 0; fi)" <<'PY'
 import sys
 path, dry = sys.argv[1], sys.argv[2] == "1"
 with open(path, encoding="utf-8") as f:
@@ -180,37 +158,18 @@ with open(path, "w", encoding="utf-8") as f:
     f.writelines(lines)
 print("== Menu restored")
 PY
+  if ! $DRY; then
+    # The .bak snapshot predates any user edits made after install; drop it so
+    # it can never overwrite the surgically-clean current file.
+    rm -f "$MENU.dshplugin.bak"
   fi
 else
   echo "== Skipped (menu file not found)"
 fi
 
-# ---------- Hyprland Agent keybinding block removal ----------
+# ---------- Hyprland Agent keybinding block removal (surgical) ----------
 if [[ -f $BINDFILE ]]; then
-  if [[ -f $BINDFILE.dshplugin.bak ]]; then
-    if $DRY; then
-      echo "  [dry-run] would restore the pre-install bindings backup"
-    else
-      python3 - "$BINDFILE" <<'PY'
-import sys
-path = sys.argv[1]
-lines = open(path, encoding="utf-8").read().splitlines(keepends=True)
-start = end = None
-for i, ln in enumerate(lines):
-    if "-- BEGIN omarchy-dsh-agent" in ln:
-        start = i
-    if start is not None and "-- END omarchy-dsh-agent" in ln:
-        end = i
-        break
-if start is not None and end is not None and start < end:
-    del lines[start:end + 1]
-    open(path, "w", encoding="utf-8").writelines(lines)
-print("== Removed plugin block from bindings.lua before restoring backup")
-PY
-      restore_backup "$BINDFILE"
-    fi
-  else
-    python3 - "$BINDFILE" "$(if $DRY; then echo 1; else echo 0; fi)" <<'PY'
+  python3 - "$BINDFILE" "$(if $DRY; then echo 1; else echo 0; fi)" <<'PY'
 import sys
 path, dry = sys.argv[1], sys.argv[2] == "1"
 with open(path, encoding="utf-8") as f:
@@ -225,7 +184,7 @@ for i, ln in enumerate(lines):
 if start is None or end is None or start >= end:
     print("== bindings.lua plugin block not found; skipping")
     sys.exit(0)
-print("== Removing the Agent keybinding block (restores Omarchy default)" + (" (dry-run)" if dry else ""))
+print("== Removing the Agent keybinding block" + (" (dry-run)" if dry else ""))
 if dry:
     sys.exit(0)
 del lines[start:end + 1]
@@ -237,6 +196,8 @@ with open(path, "w", encoding="utf-8") as f:
     f.writelines(lines)
 print("== Keybinding block removed")
 PY
+  if ! $DRY; then
+    rm -f "$BINDFILE.dshplugin.bak"
   fi
   if ! $DRY && command -v hyprctl >/dev/null 2>&1; then
     hyprctl reload >/dev/null 2>&1 \
@@ -280,6 +241,11 @@ for size in 48 64 128 256 512; do
       rm -f "$icon"
       echo "== Deleted icon (hash matches installed copy): $icon"
       removed_any=true
+      # restore whatever was there before this plugin installed over it
+      if [[ -f $icon.dshplugin.bak ]]; then
+        mv -f "$icon.dshplugin.bak" "$icon"
+        echo "== Restored pre-install icon -> $icon"
+      fi
     fi
   else
     echo "!! Icon differs from the installed copy or no bundle reference; skipping: $icon" >&2
