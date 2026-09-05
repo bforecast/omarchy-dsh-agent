@@ -267,6 +267,16 @@ if [[ -f $ICON_RECORD ]]; then
         ;;
       replaced)
         if [[ ! -f $icon ]]; then
+          # The plugin copy is gone but we once replaced a user icon: restore
+          # the backup if present instead of skipping silently.
+          if [[ -f $icon.dshplugin.bak ]]; then
+            if $DRY; then
+              echo "  [dry-run] would restore pre-install icon backup -> $icon"
+            else
+              mv -f "$icon.dshplugin.bak" "$icon"
+              echo "== Restored pre-install icon (plugin copy was missing) -> $icon"
+            fi
+          fi
           continue
         fi
         if [[ -f $bundle ]] && [[ $(sha256sum "$icon" | awk '{print $1}') == $(sha256sum "$bundle" | awk '{print $1}') ]]; then

@@ -356,38 +356,50 @@ else
 fi
 
 # ---------- 3.7) Official icons with ownership record ----------
-# Each size's status is recorded for uninstall: created (we made it), replaced
-# (a different pre-existing icon was backed up first), or keep (a pre-existing
-# icon identical to ours -- we take no ownership and never delete it).
+# Per-size ownership survives re-installs: prior created/replaced status is kept
+# as long as the file on disk still equals our bundle. New state is computed
+# into a temp file and swapped in atomically.
 icon_root="$HOME/.local/share/icons"
 rec_dir="$HOME/.local/state/dsh-omarchy-plugin"
 rec_file="$rec_dir/icons.tsv"
 if $DRY; then
-  echo "  [dry-run] would install official icons and write $rec_file"
+  echo "  [dry-run] would install official icons and update $rec_file"
 else
   mkdir -p "$rec_dir"
-  : >"$rec_file"
+  declare -A old_status=()
+  if [[ -f $rec_file ]]; then
+    while read -r sz st; do old_status["$sz"]=$st; done <"$rec_file"
+  fi
+  tmp_rec=$(mktemp "$rec_dir/icons.tsv.XXXXXX")
+  trap 'rm -f "$tmp_rec"' EXIT
   if [[ -d $FILES/icons ]]; then
     while IFS= read -r icon; do
       rel="${icon#"$FILES/icons/"}"
-      size=$(printf '%s' "$rel" | cut -d/ -f2)   # e.g. 48x48 (rel is hicolor/<size>/apps/dsh.png)
+      size=$(printf '%s' "$rel" | cut -d/ -f2)   # e.g. 48x48
       target="$icon_root/$rel"
       mkdir -p "$(dirname "$target")"
       if [[ ! -e $target ]]; then
         cp "$icon" "$target"
-        printf '%s created\n' "$size" >>"$rec_file"
+        printf '%s created\n' "$size" >>"$tmp_rec"
       elif cmp -s "$icon" "$target"; then
-        printf '%s keep\n' "$size" >>"$rec_file"
+        prior="${old_status[$size]:-}"
+        if [[ $prior == "created" || $prior == "replaced" ]]; then
+          printf '%s %s\n' "$size" "$prior" >>"$tmp_rec"
+        else
+          printf '%s keep\n' "$size" >>"$tmp_rec"
+        fi
       else
         make_backup_once "$target"
         cp "$icon" "$target"
-        printf '%s replaced\n' "$size" >>"$rec_file"
+        printf '%s replaced\n' "$size" >>"$tmp_rec"
       fi
     done < <(find "$FILES/icons" -type f -name "*.png")
     gtk-update-icon-cache -f "$icon_root/hicolor" >/dev/null 2>&1 || true
     update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
-    echo "== Official icons installed (ownership record: $rec_file)"
   fi
+  mv "$tmp_rec" "$rec_file"
+  trap - EXIT
+  echo "== Official icons installed (ownership record: $rec_file)"
 fi
 
 # ---------- 4) Optional: set as the default AI ----------
