@@ -355,6 +355,41 @@ else
   fi
 fi
 
+# ---------- 3.7) Official icons with ownership record ----------
+# Each size's status is recorded for uninstall: created (we made it), replaced
+# (a different pre-existing icon was backed up first), or keep (a pre-existing
+# icon identical to ours -- we take no ownership and never delete it).
+icon_root="$HOME/.local/share/icons"
+rec_dir="$HOME/.local/state/dsh-omarchy-plugin"
+rec_file="$rec_dir/icons.tsv"
+if $DRY; then
+  echo "  [dry-run] would install official icons and write $rec_file"
+else
+  mkdir -p "$rec_dir"
+  : >"$rec_file"
+  if [[ -d $FILES/icons ]]; then
+    while IFS= read -r icon; do
+      rel="${icon#"$FILES/icons/"}"
+      size=$(printf '%s' "$rel" | cut -d/ -f2)   # e.g. 48x48 (rel is hicolor/<size>/apps/dsh.png)
+      target="$icon_root/$rel"
+      mkdir -p "$(dirname "$target")"
+      if [[ ! -e $target ]]; then
+        cp "$icon" "$target"
+        printf '%s created\n' "$size" >>"$rec_file"
+      elif cmp -s "$icon" "$target"; then
+        printf '%s keep\n' "$size" >>"$rec_file"
+      else
+        make_backup_once "$target"
+        cp "$icon" "$target"
+        printf '%s replaced\n' "$size" >>"$rec_file"
+      fi
+    done < <(find "$FILES/icons" -type f -name "*.png")
+    gtk-update-icon-cache -f "$icon_root/hicolor" >/dev/null 2>&1 || true
+    update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
+    echo "== Official icons installed (ownership record: $rec_file)"
+  fi
+fi
+
 # ---------- 4) Optional: set as the default AI ----------
 if $SET_DEFAULT; then
   state_dir="$HOME/.local/state/dsh-omarchy-plugin"

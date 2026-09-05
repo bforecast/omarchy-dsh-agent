@@ -51,6 +51,7 @@ DESKTOP_FILE="$HOME/.local/share/applications/dsh.desktop"
 ICON_ROOT="$HOME/.local/share/icons"
 STATE_DIR="$HOME/.local/state/dsh-omarchy-plugin"
 STATE_FILE="$STATE_DIR/state"
+ICON_RECORD="$STATE_DIR/icons.tsv"
 
 # Restore a pre-install backup (taken by install.sh as <file>.dshplugin.bak).
 # Called only in the real (non-dry) run.
@@ -93,9 +94,6 @@ if [[ $current == "dsh" ]]; then
       printf '%s\n' "$target" >"$AGENT_FILE"
       echo "== Default AI restored to $target"
     fi
-    # Only after a real, successful restore: drop the state file.
-    rm -f "$STATE_FILE"
-    rmdir "$STATE_DIR" 2>/dev/null || true
   fi
 else
   echo "== Current default AI is not dsh (=${current:-<unset>}); skipping default restore"
@@ -247,31 +245,49 @@ else
   echo "== Skipped (dsh.desktop not found)"
 fi
 
-# ---------- Icon removal (hash-matched against the bundled icons only) ----------
+# ---------- Icon removal (ownership-record driven) ----------
 removed_any=false
-for size in 48 64 128 256 512; do
-  icon="$ICON_ROOT/hicolor/${size}x${size}/apps/dsh.png"
-  bundle="$SELF_DIR/files/icons/hicolor/${size}x${size}/apps/dsh.png"
-  if [[ ! -f $icon ]]; then
-    continue
-  fi
-  if [[ -f $bundle ]] && [[ $(sha256sum "$icon" | awk '{print $1}') == $(sha256sum "$bundle" | awk '{print $1}') ]]; then
-    if $DRY; then
-      echo "  [dry-run] would delete icon (hash matches installed copy): $icon"
-    else
-      rm -f "$icon"
-      echo "== Deleted icon (hash matches installed copy): $icon"
-      removed_any=true
-      # restore whatever was there before this plugin installed over it
-      if [[ -f $icon.dshplugin.bak ]]; then
-        mv -f "$icon.dshplugin.bak" "$icon"
-        echo "== Restored pre-install icon -> $icon"
-      fi
-    fi
-  else
-    echo "!! Icon differs from the installed copy or no bundle reference; skipping: $icon" >&2
-  fi
-done
+if [[ -f $ICON_RECORD ]]; then
+  while read -r size status; do
+    [[ $size =~ ^[0-9]+x[0-9]+$ ]] || continue
+    icon="$ICON_ROOT/hicolor/${size}/apps/dsh.png"
+    bundle="$SELF_DIR/files/icons/hicolor/${size}/apps/dsh.png"
+    case "$status" in
+      created)
+        if [[ ! -f $icon ]]; then
+          continue
+        fi
+        if [[ -f $bundle ]] && [[ $(sha256sum "$icon" | awk '{print $1}') == $(sha256sum "$bundle" | awk '{print $1}') ]]; then
+          if $DRY; then echo "  [dry-run] would delete icon (created by us): $icon"; else
+            rm -f "$icon"; echo "== Deleted icon (created by us): $icon"; removed_any=true
+          fi
+        else
+          echo "!! Icon changed since install; not deleting: $icon" >&2
+        fi
+        ;;
+      replaced)
+        if [[ ! -f $icon ]]; then
+          continue
+        fi
+        if [[ -f $bundle ]] && [[ $(sha256sum "$icon" | awk '{print $1}') == $(sha256sum "$bundle" | awk '{print $1}') ]]; then
+          if $DRY; then echo "  [dry-run] would delete icon and restore its backup: $icon"; else
+            rm -f "$icon"; echo "== Deleted icon (replaced by us): $icon"; removed_any=true
+            restore_backup "$icon"
+          fi
+        else
+          echo "!! Icon changed since install; not deleting: $icon" >&2
+        fi
+        ;;
+      *)
+        echo "== Icon kept (no ownership / status '$status'): $icon" >&2
+        ;;
+    esac
+  done <"$ICON_RECORD"
+elif ! $DRY; then
+  # No ownership record (installed by an older version): conservative - do not
+  # delete any dsh.png icons, since we cannot tell ours from a user's.
+  echo "== No icon ownership record; leaving any existing dsh.png icons in place"
+fi
 if ! $DRY && $removed_any; then
   gtk-update-icon-cache -f "$ICON_ROOT/hicolor" >/dev/null 2>&1 || true
 fi
@@ -327,6 +343,12 @@ if $REMOVE_PWA; then
   fi
 else
   echo "== Chromium PWA entry kept (pass --remove-pwa to delete it)"
+fi
+
+# ---------- State cleanup (kept until the very end) ----------
+if ! $DRY; then
+  rm -f "$STATE_FILE" "$ICON_RECORD"
+  rmdir "$STATE_DIR" 2>/dev/null || true
 fi
 
 # ---------- Leftover cleanup hints ----------
