@@ -380,7 +380,14 @@ else
       mkdir -p "$(dirname "$target")"
       if [[ ! -e $target ]]; then
         cp "$icon" "$target"
-        printf '%s created\n' "$size" >>"$tmp_rec"
+        prior="${old_status[$size]:-}"
+        if [[ $prior == "replaced" && -f $target.dshplugin.bak ]]; then
+          # The user icon is still in .bak: keep ownership so uninstall
+          # removes this new copy and restores the original.
+          printf '%s replaced\n' "$size" >>"$tmp_rec"
+        else
+          printf '%s created\n' "$size" >>"$tmp_rec"
+        fi
       elif cmp -s "$icon" "$target"; then
         prior="${old_status[$size]:-}"
         if [[ $prior == "created" || $prior == "replaced" ]]; then
