@@ -80,20 +80,23 @@ if [[ ! -f "$REPO_DIR/apps/cli/src/bin.ts" ]]; then
     echo "install.sh: invalid commit pin '$pin' (expected 40 lowercase hex chars; set --repo-rev or DSH_COMMIT)" >&2
     exit 1
   fi
-  echo "== DSH source not found ($REPO_DIR); cloning $REPO_URL at pinned commit $pin"
+  echo "== DSH source not found ($REPO_DIR); preparing it at pinned commit $pin"
   if $DRY; then
-    echo "  [dry-run] would clone $REPO_URL and detached-checkout commit $pin"
+    echo "  [dry-run] would git init $REPO_DIR, fetch commit $pin from $REPO_URL, and detached-checkout it"
   else
-    git clone "$REPO_URL" "$REPO_DIR" || { echo "install.sh: clone failed" >&2; exit 1; }
-    git -C "$REPO_DIR" fetch --depth 1 origin "$pin" || {
-      echo "install.sh: could not fetch pinned commit $pin" >&2
+    # Fetch the exact pinned commit only: no branch/tag clone is ever built or
+    # executed, so the reviewed 40-hex SHA is the only source that runs.
+    git init -q "$REPO_DIR" || { echo "install.sh: could not git init $REPO_DIR" >&2; exit 1; }
+    git -C "$REPO_DIR" remote add origin "$REPO_URL" 2>/dev/null || true
+    if ! git -C "$REPO_DIR" fetch --depth 1 origin "$pin"; then
+      echo "install.sh: could not fetch pinned commit $pin from $REPO_URL" >&2
       rm -rf "$REPO_DIR"
       exit 1
-    }
+    fi
     git -C "$REPO_DIR" checkout --detach "$pin"
     got=$(git -C "$REPO_DIR" rev-parse HEAD)
     if [[ $got != "$pin" ]]; then
-      echo "install.sh: pinned checkout verification failed (HEAD=$got != $pin); removing incomplete clone" >&2
+      echo "install.sh: pinned checkout verification failed (HEAD=$got != $pin); removing incomplete checkout" >&2
       rm -rf "$REPO_DIR"
       exit 1
     fi
