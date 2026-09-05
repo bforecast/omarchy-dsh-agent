@@ -92,40 +92,50 @@ if [[ ! -f "$REPO_DIR/apps/cli/src/bin.ts" ]]; then
     exit 1
   fi
   echo "== DSH source not found ($REPO_DIR); preparing it at pinned commit $pin"
-  tmpdir="$REPO_DIR.dsh-tmp.$$"
+  tmpdir=""
   if $DRY; then
-    echo "  [dry-run] would prepare $tmpdir (git init, fetch commit $pin, detached checkout, verify) then atomically rename it to $REPO_DIR"
+    echo "  [dry-run] would create a fresh sibling temp dir, fetch commit $pin, detached-checkout/verify, then atomically rename it to $REPO_DIR"
   else
-    # Build in a sibling temporary directory first; only our own temp dir is
-    # ever cleaned up, and the final rename is atomic.
+    # mktemp guarantees a fresh directory; the trap below removes ONLY the temp
+    # dir this run created (never anything pre-existing, never REPO_DIR).
+    tmpdir=$(mktemp -d "$(dirname "$REPO_DIR")/.dsh-tmp.XXXXXX")
+    trap 'if [[ -n ${tmpdir:-} && -d $tmpdir ]]; then rm -rf "$tmpdir"; fi' EXIT
     git init -q "$tmpdir" || { echo "install.sh: could not git init $tmpdir" >&2; exit 1; }
     git -C "$tmpdir" remote add origin "$REPO_URL" 2>/dev/null || true
     if ! git -C "$tmpdir" fetch --depth 1 origin "$pin"; then
       echo "install.sh: could not fetch pinned commit $pin from $REPO_URL" >&2
-      rm -rf "$tmpdir"
       exit 1
     fi
     git -C "$tmpdir" checkout --detach "$pin"
     got=$(git -C "$tmpdir" rev-parse HEAD)
     if [[ $got != "$pin" ]]; then
-      echo "install.sh: pinned checkout verification failed (HEAD=$got != $pin); removing temporary directory" >&2
-      rm -rf "$tmpdir"
+      echo "install.sh: pinned checkout verification failed (HEAD=$got != $pin)" >&2
       exit 1
     fi
     mv "$tmpdir" "$REPO_DIR"
+    tmpdir=""   # success: nothing left to clean
     echo "== Verified detached HEAD at $pin and moved checkout into place"
   fi
   say "DSH source ready: $REPO_DIR"
 else
-  # Existing checkout: honour the pin unless the user explicitly opts out.
+  # Existing checkout: unless the user opts out with --use-existing it must be
+  # a real Git repository whose HEAD equals the pin AND whose work tree is
+  # clean - otherwise the pinned-source guarantee would not hold.
   echo "== Found existing DSH source: $REPO_DIR"
-  got=$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)
-  if [[ -n $got && $got != "$pin" && $USE_EXISTING == false ]]; then
-    echo "install.sh: existing checkout is at $got, not the pinned commit $pin." >&2
-    echo "   Update it to $pin, remove it (a fresh checkout is pinned automatically), or pass --use-existing to accept it as-is." >&2
-    exit 1
+  if [[ $USE_EXISTING == false ]]; then
+    inrepo=$(git -C "$REPO_DIR" rev-parse --is-inside-work-tree 2>/dev/null || true)
+    got=$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)
+    dirty=$(git -C "$REPO_DIR" status --porcelain 2>/dev/null | head -1 || true)
+    if [[ $inrepo != "true" || -z $got || $got != "$pin" || -n $dirty ]]; then
+      echo "install.sh: existing checkout is not a clean Git repo at the pinned commit $pin." >&2
+      echo "   Conditions required without --use-existing: valid Git repo, HEAD == $pin, clean work tree." >&2
+      echo "   Update/clean it, remove it (a fresh checkout is pinned automatically), or pass --use-existing to accept it as-is." >&2
+      exit 1
+    fi
+    echo "== Existing checkout verified: HEAD ${got:0:7} == pin, clean work tree"
+  else
+    echo "== Using existing DSH checkout as-is (--use-existing)"
   fi
-  echo "== Using existing DSH checkout${got:+ (HEAD ${got:0:7})}"
 fi
 
 if ! $NO_BOOTSTRAP && [[ -f "$REPO_DIR/apps/cli/src/bin.ts" && ! -d "$REPO_DIR/node_modules" ]]; then

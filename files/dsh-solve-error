@@ -112,10 +112,11 @@ if $show_context; then
   exit 0
 fi
 
-# Fail-closed consent before the context leaves the machine.
+# Fail-closed consent before the context leaves the machine. --dry-run never
+# sends anything, so it skips consent entirely.
 #   interactive: ask for confirmation;
 #   non-interactive (scripts/pipes/automation): refuse unless -y/--yes is given.
-if [[ $auto_yes == false ]]; then
+if [[ $dry_run == false && $auto_yes == false ]]; then
   if [[ -t 0 && -t 1 ]]; then
     echo "About to send diagnostics (see --show-context for the redacted preview) to your configured model provider." >&2
     read -r -p "Send? [y/N] " ans <&1 || ans=n

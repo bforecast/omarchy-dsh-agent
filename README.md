@@ -74,8 +74,8 @@ files/
   the pin or be accepted with `--use-existing`. A custom `--repo-url` is refused without an
   explicit `--repo-rev <40-hex>`. Dependencies install with `pnpm install --frozen-lockfile`.
 - **`--dry-run` changes nothing**: it performs no writes and creates no directories.
-- **Conservative uninstall**: `uninstall.sh` removes only files that content/hash-match what
-  the plugin installed; it restores the `*.dshplugin.bak` backups taken before overwriting
+- **Conservative uninstall**: `uninstall.sh` removes only files that are byte-identical to what
+  the plugin installed (user modifications are never deleted); it restores the `*.dshplugin.bak` backups taken before overwriting
   wrappers/desktop/icons, deletes icons only when they hash-match ours, keeps the Chromium
   "DeepSeek Harness" PWA unless `--remove-pwa`, edits menu and Hyprland bindings **surgically**
   (plugin marker blocks only, so post-install user edits survive), and never spawns windows.

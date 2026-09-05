@@ -101,15 +101,17 @@ else
   echo "== Current default AI is not dsh (=${current:-<unset>}); skipping default restore"
 fi
 
-# ---------- Remove wrappers (content-matched only) and restore backups ----------
+# ---------- Remove wrappers (full byte match only) and restore backups ----------
+# A wrapper is only removed when it is byte-identical to the bundled template;
+# user modifications make it differ and are never deleted.
 remove_one() {
-  local path=$1 sentinel=$2
+  local path=$1 bundle="$SELF_DIR/files/$1"
   if [[ ! -e $path ]]; then
     echo "== Skipped (not found): $path"
     return
   fi
-  if ! grep -qF "$sentinel" "$path"; then
-    echo "!! Skipped (content differs from this plugin; possibly modified): $path" >&2
+  if [[ ! -f $bundle ]] || ! cmp -s "$path" "$bundle"; then
+    echo "!! Skipped (content differs from the plugin template; possibly modified): $path" >&2
     return
   fi
   if $DRY; then
@@ -120,11 +122,11 @@ remove_one() {
     restore_backup "$path"
   fi
 }
-remove_one "$BIN/dsh-web" 'dsh-web -- Omarchy "AI agent" entry'
-remove_one "$BIN/omarchy-default-agent" 'teaches `omarchy default agent` about the local DSH'
-remove_one "$BIN/omarchy-agent" 'when the default agent is the local DSH agent'
-remove_one "$BIN/omarchy" 'User extension wrapper for the `omarchy` CLI'
-remove_one "$BIN/dsh-solve-error" 'dsh-solve-error -- collect an error context'
+remove_one dsh-web
+remove_one omarchy-default-agent
+remove_one omarchy-agent
+remove_one omarchy
+remove_one dsh-solve-error
 
 # ---------- Menu entry removal (surgical: marker block only) ----------
 if [[ -f $MENU ]]; then
@@ -209,8 +211,25 @@ else
 fi
 
 # ---------- Desktop-app registration removal ----------
+desktop_expected() {
+  cat <<EOF
+# Installed by omarchy-dsh-agent plugin (uninstall.sh removes it).
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=DSH (DeepSeek Harness)
+GenericName=DeepSeek Harness
+Comment=Local DeepSeek Harness AI agent: starts the server and opens its web interface
+Exec=$HOME/.local/bin/dsh-web
+Icon=dsh
+Terminal=false
+Categories=Development;Network;
+Keywords=AI;agent;deepseek;harness;
+StartupNotify=true
+EOF
+}
 if [[ -f $DESKTOP_FILE ]]; then
-  if grep -qF "omarchy-dsh-agent" "$DESKTOP_FILE"; then
+  if [[ $(cat "$DESKTOP_FILE") == "$(desktop_expected)" ]]; then
     if $DRY; then
       echo "  [dry-run] would delete desktop entry $DESKTOP_FILE"
     else
@@ -220,7 +239,7 @@ if [[ -f $DESKTOP_FILE ]]; then
       update-desktop-database "$(dirname "$DESKTOP_FILE")" >/dev/null 2>&1 || true
     fi
   else
-    echo "!! Desktop entry differs from this plugin (possibly modified); skipping: $DESKTOP_FILE" >&2
+    echo "!! Desktop entry differs from the plugin template (possibly modified); skipping: $DESKTOP_FILE" >&2
   fi
 else
   echo "== Skipped (dsh.desktop not found)"
