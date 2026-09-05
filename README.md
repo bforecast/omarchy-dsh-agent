@@ -67,6 +67,10 @@ files/
 | `--no-keybinding` | Skip the Hyprland Agent-key rebinding |
 | `-n` / `--dry-run` | Print the actions that would be taken, change nothing |
 
+- **Balance widget**: the bar widget shows the DeepSeek balance via `dsh-balance`, which reads
+  the `DEEPSEEK_API_KEY` (env or `~/.dsh/.credentials.yaml`) and makes one HTTPS call to
+  `api.deepseek.com/user/balance`. The key is never printed or stored by the helper.
+
 ## Security & privacy notes
 
 - **Pinned DSH source**: `install.sh` prepares DeepSeek Harness by `git init` + fetching

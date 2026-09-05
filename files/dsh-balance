@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#
+# dsh-balance -- print the DeepSeek account balance used by the configured DSH
+# provider (DEEPSEEK_API_KEY), e.g. "¥12.34" or "12.34 CNY". Prints nothing and
+# exits non-zero when no key is configured or the API is unreachable.
+#
+# The key is read from the environment or from ~/.dsh/.credentials.yaml and is
+# used only for this one HTTPS request; it is never echoed or stored.
+set -uo pipefail
+
+key="${DEEPSEEK_API_KEY:-}"
+if [[ -z $key ]]; then
+  cred="$HOME/.dsh/.credentials.yaml"
+  if [[ -f $cred ]]; then
+    key=$(sed -n 's/^[[:space:]]*DEEPSEEK_API_KEY:[[:space:]]*//p' "$cred" | head -1 | sed "s/^['\"]//; s/['\"]$//")
+  fi
+fi
+[[ -n $key ]] || exit 1
+
+out=$(curl -fsS --max-time 10 https://api.deepseek.com/user/balance \
+      -H "Authorization: Bearer $key" 2>/dev/null) || exit 1
+
+python3 - "$out" <<'PY'
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    infos = d.get("balance_infos") or []
+except Exception:
+    sys.exit(1)
+if not infos:
+    sys.exit(1)
+total = infos[0].get("total_balance")
+cur = infos[0].get("currency", "CNY")
+if total is None:
+    sys.exit(1)
+print(f"{total} {cur}".strip())
+PY

@@ -64,6 +64,10 @@ files/
 | `--no-keybinding` | 跳过 Hyprland Agent 键改绑 |
 | `-n` / `--dry-run` | 干跑，只打印将执行的动作 |
 
+- **余额显示**：顶栏 widget 通过 `dsh-balance` 显示 DeepSeek 余额；助手读取
+  `DEEPSEEK_API_KEY`（env 或 `~/.dsh/.credentials.yaml`）并仅向 `api.deepseek.com/user/balance`
+  发一次 HTTPS 请求，密钥不会被打印或保存。
+
 ## 安全与隐私说明
 
 - **锁定 DSH 源码**：`install.sh` 用 `git init` + 只 fetch 锁定的 40 位 commit

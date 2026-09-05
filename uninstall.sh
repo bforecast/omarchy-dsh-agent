@@ -127,6 +127,7 @@ remove_one omarchy-default-agent
 remove_one omarchy-agent
 remove_one omarchy
 remove_one dsh-solve-error
+remove_one dsh-balance
 
 # ---------- Menu entry removal (surgical: marker block only) ----------
 if [[ -f $MENU ]]; then

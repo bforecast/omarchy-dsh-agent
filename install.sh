@@ -207,6 +207,7 @@ install_one omarchy-default-agent
 install_one omarchy-agent
 install_one omarchy
 install_one dsh-solve-error
+install_one dsh-balance
 
 # ---------- 3) Menu merge (idempotent) ----------
 menu="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"

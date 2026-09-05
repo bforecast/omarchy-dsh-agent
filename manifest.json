@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "dsh-launcher",
   "name": "DSH Launcher",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "author": "bforecast",
   "license": "MIT",
-  "description": "DeepSeek Harness for the Omarchy bar: one-click launcher and fix-system-errors entry; pairs with install.sh for full AI-agent registration",
+  "description": "DeepSeek Harness for the Omarchy bar: launcher showing the DeepSeek account balance, plus companion install.sh for full AI-agent registration (default agent, dsh-solve-error)",
   "kinds": [
     "bar-widget"
   ],
