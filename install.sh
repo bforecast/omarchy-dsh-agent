@@ -157,13 +157,18 @@ check_environment() {
       echo "!! node $major detected; DSH requires Node.js >= 22." >&2
     fi
   fi
-  case ":$PATH:" in
-    *":$HOME/.local/bin:"*":/usr/share/omarchy/bin:"*) ;;
-    *)
-      echo "!! ~/.local/bin should come before /usr/share/omarchy/bin on PATH for the agent wrappers to take effect." >&2
-      echo "   (The Super+Shift+Ctrl+A keybinding uses an absolute path and works regardless.)" >&2
-      ;;
-  esac
+  local lb=999 sb=999 idx=0 part
+  IFS=':' read -r -a parts <<<"$PATH"
+  for part in "${parts[@]}"; do
+    if [[ $part == "$HOME/.local/bin" && $lb == 999 ]]; then lb=$idx; fi
+    if [[ $part == "/usr/share/omarchy/bin" && $sb == 999 ]]; then sb=$idx; fi
+    if (( lb != 999 && sb != 999 )); then break; fi
+    idx=$((idx + 1))
+  done
+  if (( lb == 999 || sb == 999 || lb > sb )); then
+    echo "!! ~/.local/bin should come before /usr/share/omarchy/bin on PATH for the agent wrappers to take effect." >&2
+    echo "   (The Super+Shift+Ctrl+A keybinding uses an absolute path and works regardless.)" >&2
+  fi
 }
 check_environment
 
@@ -315,14 +320,9 @@ desktop_dir="$HOME/.local/share/applications"
 desktop_file="$desktop_dir/dsh.desktop"
 icon_root="$HOME/.local/share/icons"
 do_or_dry mkdir -p "$desktop_dir"
-if [[ -f $desktop_file ]] && grep -qF "DeepSeek Harness" "$desktop_file" \
-    && grep -qF "$HOME/.local/bin/dsh-web" "$desktop_file"; then
-  echo "== DSH desktop entry already present; skipping"
-else
-  if [[ -f $desktop_file ]] && ! cmp -s <(printf '%s\n' "$desktop") "$desktop_file"; then
-    make_backup_once "$desktop_file"
-  fi
-  desktop=$(cat <<EOF
+
+# The exact content install.sh owns (compared and written atomically below).
+desktop=$(cat <<EOF
 # Installed by omarchy-dsh-agent plugin (uninstall.sh removes it).
 [Desktop Entry]
 Type=Application
@@ -338,36 +338,20 @@ Keywords=AI;agent;deepseek;harness;
 StartupNotify=true
 EOF
 )
+
+if [[ -f $desktop_file ]] && [[ $(cat "$desktop_file") == "$desktop" ]]; then
+  echo "== DSH desktop entry already up to date; skipping"
+else
+  if [[ -f $desktop_file ]]; then
+    make_backup_once "$desktop_file"
+  fi
   if $DRY; then
     echo "  [dry-run] would write desktop entry $desktop_file"
   else
-    printf '%s\n' "$desktop" >"$desktop_file"
+    tmpdesk=$(mktemp "$desktop_dir/.dsh.desktop.XXXXXX")
+    printf '%s\n' "$desktop" >"$tmpdesk"
+    mv "$tmpdesk" "$desktop_file"
     echo "== Wrote desktop entry $desktop_file"
-  fi
-fi
-if [[ -d $FILES/icons ]]; then
-  if $DRY; then
-    echo "  [dry-run] would install official icons to $icon_root/hicolor"
-  else
-    while IFS= read -r icon; do
-      rel="${icon#"$FILES/icons/"}"
-      target="$icon_root/$rel"
-      mkdir -p "$(dirname "$target")"
-      if [[ -e $target ]] && ! cmp -s "$icon" "$target"; then
-        if [[ ! -e $target.dshplugin.bak ]]; then
-          cp "$target" "$target.dshplugin.bak"
-          echo "   (backed up existing icon -> $target.dshplugin.bak)"
-        else
-          ts=${EPOCHSECONDS:-$(date +%s)}
-          cp "$target" "$target.dshplugin.bak.$ts"
-          echo "   (original icon backup kept; extra snapshot -> $target.dshplugin.bak.$ts)"
-        fi
-      fi
-      cp "$icon" "$target"
-    done < <(find "$FILES/icons" -type f -name "*.png")
-    gtk-update-icon-cache -f "$icon_root/hicolor" >/dev/null 2>&1 || true
-    update-desktop-database "$desktop_dir" >/dev/null 2>&1 || true
-    echo "== Official icons installed to $icon_root/hicolor"
   fi
 fi
 

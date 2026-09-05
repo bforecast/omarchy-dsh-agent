@@ -40,7 +40,6 @@ files/
 | `~/.local/bin/dsh-web` | 幂等启动 `dsh web`，然后以 Omarchy 独立应用窗口打开 `http://127.0.0.1:3080`（日志 `~/.local/state/dsh/web.log`） |
 | `~/.local/bin/omarchy-*` | 3 个用户级包装，让 Omarchy 的菜单/按键/崩溃诊断各入口认识 `dsh`（其余行为透传原版） |
 | `~/.config/omarchy/extensions/omarchy-menu.jsonc` | 合并菜单项：Default Agent 选择器 DSH 项（幂等，先备份 `*.dshplugin.bak`） |
-| `~/.local/share/applications/dsh.desktop` + hicolor `dsh.png` | 注册为带官方图标的应用：菜单应用搜索显示真 DSH logo |
 | `~/.local/share/applications/dsh.desktop` + `~/.local/share/icons/hicolor/*/apps/dsh.png` | 把 DSH 注册为带官方图标的桌面应用：菜单/应用搜索里出现带真 DSH logo 的应用行（图标取自 DSH 官方 `favicon.svg`） |
 | `~/.config/omarchy/defaults/agent` | 仅 `--default` 时写入 `dsh`，并把旧默认记录到 `~/.local/state/dsh-omarchy-plugin/state` 供卸载还原 |
 
@@ -59,7 +58,10 @@ files/
 | `--widget-url URL` | `--with-widget` 的仓库源（缺省 `https://github.com/bforecast/omarchy-dsh-agent.git`） |
 | `--repo-dir PATH` | DSH 源码目录（缺省 `~/deepseek-harness`；已存在则复用） |
 | `--repo-url URL` | 克隆来源（缺省 `https://github.com/deepseek-ai/deepseek-harness.git`） |
+| `--repo-rev <40位>` | DSH 源码提交锁覆盖（缺省内置 `DSH_COMMIT`） |
+| `--use-existing` | 原样复用已有 DSH checkout（跳过 pin/干净树校验） |
 | `--no-bootstrap` | 跳过 `pnpm install` |
+| `--no-keybinding` | 跳过 Hyprland Agent 键改绑 |
 | `-n` / `--dry-run` | 干跑，只打印将执行的动作 |
 
 ## 安全与隐私说明

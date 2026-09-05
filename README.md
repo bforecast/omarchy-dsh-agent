@@ -61,6 +61,8 @@ files/
 | `--widget-url URL` | Widget repo source for `--with-widget` (default `https://github.com/bforecast/omarchy-dsh-agent.git`) |
 | `--repo-dir PATH` | DSH source directory (default `~/deepseek-harness`; reused if it already exists) |
 | `--repo-url URL` | Clone source (default `https://github.com/deepseek-ai/deepseek-harness.git`) |
+| `--repo-rev <40-hex>` | Pin override for the DSH source commit (default: built-in `DSH_COMMIT`) |
+| `--use-existing` | Reuse an existing DSH checkout as-is, skipping pin/clean-tree verification |
 | `--no-bootstrap` | Skip `pnpm install` |
 | `--no-keybinding` | Skip the Hyprland Agent-key rebinding |
 | `-n` / `--dry-run` | Print the actions that would be taken, change nothing |
