@@ -37,7 +37,7 @@ BarWidget {
       waitForEnd: true
       onStreamFinished: root.balance = text.trim()
     }
-    onExited: {
+    onExited: function(exitCode) {
       if (exitCode !== 0) root.balance = ""
     }
   }
