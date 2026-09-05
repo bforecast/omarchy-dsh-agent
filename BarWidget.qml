@@ -5,18 +5,19 @@ import qs.Ui
 
 // DSH Launcher bar widget.
 //
-// Shows the DeepSeek account balance reported by the dsh-balance helper (installed
-// by install.sh) next to the DSH icon, refreshing every 10 minutes. Left click
-// starts the local DeepSeek Harness if needed and opens its web UI. When the
-// balance is unavailable the widget degrades to the plain launcher icon.
+// Standard single-button bar widget: the official DeepSeek Harness icon (from
+// the hicolor theme, installed by install.sh) fills the slot. Left click starts
+// the local DeepSeek Harness if needed and opens its web UI. The DeepSeek
+// account balance (dsh-balance helper) is refreshed every 10 minutes and shown
+// in the tooltip.
 BarWidget {
   id: root
   moduleName: "dsh-launcher"
 
-  readonly property string icon: "󰚩"   // Nerd Font robot glyph for the launcher
+  readonly property string home: Quickshell.env("HOME")
   property string balance: ""
 
-  readonly property string labelText: root.balance === "" ? "󰚩" : "󰚩  " + root.balance
+  readonly property string iconUrl: root.home + "/.local/share/icons/hicolor/64x64/apps/dsh.png"
 
   function openDsh() {
     if (root.bar) root.bar.run("dsh-web")
@@ -29,9 +30,30 @@ BarWidget {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
+  BarIconButton {
+    id: button
+    anchors.fill: parent
+    bar: root.bar
+    iconComponent: Component {
+      Item {
+        Image {
+          anchors.centerIn: parent
+          source: root.iconUrl
+          sourceSize.width: 20
+          sourceSize.height: 20
+          fillMode: Image.PreserveAspectFit
+        }
+      }
+    }
+    tooltipText: "DSH (DeepSeek Harness) — balance: " + (root.balance === "" ? "unavailable" : root.balance)
+    onPressed: function() {
+      root.openDsh()
+    }
+  }
+
   Process {
     id: balProc
-    command: [Quickshell.env("HOME") + "/.local/bin/dsh-balance"]
+    command: [root.home + "/.local/bin/dsh-balance"]
     running: true
     stdout: StdioCollector {
       waitForEnd: true
@@ -47,19 +69,5 @@ BarWidget {
     running: true
     repeat: true
     onTriggered: root.refreshBalance()
-  }
-
-  WidgetButton {
-    id: button
-    anchors.fill: parent
-    bar: root.bar
-    text: root.vertical ? root.icon : root.labelText
-    tooltipText: "DSH (DeepSeek Harness) — balance: " + (root.balance === "" ? "unavailable" : root.balance)
-    labelVisible: !root.vertical
-    hasVisualContent: true
-    horizontalMargin: 8.75
-    onPressed: function() {
-      root.openDsh()
-    }
   }
 }
