@@ -25,7 +25,7 @@ printf 'Authorization: Bearer %s\n' "$key" | \
   curl -fsS --max-time 10 --max-filesize "$cap" \
     https://api.deepseek.com/user/balance -H @- 2>/dev/null | \
   python3 -c '
-import json, math, re, sys
+import json, re, sys
 
 cap = 64 * 1024
 data = sys.stdin.read(cap + 1)
@@ -48,25 +48,19 @@ if not isinstance(first, dict):
     sys.exit(1)
 
 total = first.get("total_balance")
-currency = first.get("currency", "CNY")
+currency = first.get("currency")
 
-if isinstance(total, bool):
-    sys.exit(1)
-if isinstance(total, (int, float)):
-    if not math.isfinite(total) or total < 0:
-        sys.exit(1)
-    total_s = str(total)
-else:
-    total_s = str(total)
+# total_balance: required string, non-empty, <=32 chars, non-negative decimal
+if not isinstance(total, str):
+    sys.exit(1)               # JSON number/bool/null are not valid per schema
+total_s = total
 if not total_s or len(total_s) > 32:
     sys.exit(1)
-# non-negative decimal string
 if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", total_s):
     sys.exit(1)
 
-if isinstance(currency, bool) or not isinstance(currency, str):
-    sys.exit(1)
-if not re.fullmatch(r"[A-Z]{2,8}", currency):
+# currency: required string, only CNY or USD per the DeepSeek API schema
+if not isinstance(currency, str) or currency not in ("CNY", "USD"):
     sys.exit(1)
 
 print(f"{total_s} {currency}".strip())

@@ -30,6 +30,11 @@ case "$mode" in
   nan)       printf '{"balance_infos":[{"currency":"CNY","total_balance":NaN}]}' ;;
   negative)  printf '{"balance_infos":[{"currency":"CNY","total_balance":"-1.0"}]}' ;;
   booltotal) printf '{"balance_infos":[{"currency":"CNY","total_balance":true}]}' ;;
+  missingcur) printf '{"balance_infos":[{"total_balance":"1.00"}]}' ;;
+  inttotal)   printf '{"balance_infos":[{"currency":"CNY","total_balance":1}]}' ;;
+  floattotal) printf '{"balance_infos":[{"currency":"USD","total_balance":1.25}]}' ;;
+  nulltotal)  printf '{"balance_infos":[{"currency":"CNY","total_balance":null}]}' ;;
+  unsupportedcur) printf '{"balance_infos":[{"currency":"ABC","total_balance":"1.00"}]}' ;;
   *) exit 22 ;;
 esac
 C
@@ -43,7 +48,7 @@ grep -q -- "sk-secret-123" "$TMP/args.txt" && bad "key leaked into curl argv" ||
 grep -q -- "Authorization: Bearer sk-secret-123" "$TMP/stdin.txt" && ok || bad "header not on stdin"
 
 # negatives: every mode must exit non-zero with empty stdout
-for mode in oversize badjson longval badcur boolcur emptytotal nan negative booltotal; do
+for mode in oversize badjson longval badcur boolcur emptytotal nan negative booltotal missingcur inttotal floattotal nulltotal unsupportedcur; do
   out=$(run "$mode"); rc=$?
   if (( rc == 0 )); then bad "mode $mode unexpectedly succeeded (out='$out')"; else ok; fi
   if [[ -n $out ]]; then bad "mode $mode printed output"; else ok; fi
