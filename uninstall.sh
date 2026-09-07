@@ -309,9 +309,22 @@ WIDGET_DIR="$HOME/.config/omarchy/plugins/$WIDGET_ID"
 if $KEEP_WIDGET; then
   echo "== Skipped bar-widget removal (--keep-widget)"
 elif [[ -d $WIDGET_DIR ]] \
-    && grep -qF '"id": "dsh-launcher"' "$WIDGET_DIR/manifest.json" 2>/dev/null \
+    && grep -qE '"id"[[:space:]]*:[[:space:]]*"dsh-launcher"' "$WIDGET_DIR/manifest.json" 2>/dev/null \
     && grep -qF "DSH Launcher bar widget" "$WIDGET_DIR/BarWidget.qml" 2>/dev/null; then
-  if $DRY; then
+  # Fail closed on uncommitted local changes inside a git worktree: an
+  # automatic `plugin remove --yes` would rm -rf them. The user must commit,
+  # stash, back up or remove manually first.
+  dirty=false
+  if git -C "$WIDGET_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [[ -n $(git --no-optional-locks -C "$WIDGET_DIR" status --porcelain --untracked-files=all 2>/dev/null | head -1) ]]; then
+      dirty=true
+    fi
+  fi
+  if $dirty; then
+    echo "!! Bar widget '$WIDGET_ID' has uncommitted local changes (git worktree); refusing to remove it automatically." >&2
+    echo "   Commit or stash them, back the directory up, or remove it manually with:" >&2
+    echo "   omarchy plugin remove $WIDGET_ID --yes" >&2
+  elif $DRY; then
     echo "  [dry-run] would remove the bar widget: omarchy plugin remove $WIDGET_ID --yes"
   else
     if omarchy plugin remove "$WIDGET_ID" --yes >/dev/null 2>&1; then
