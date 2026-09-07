@@ -79,6 +79,20 @@ run_uninstall >/dev/null
 [[ -d $WD ]] && [[ -f $WD/UNCOMMITTED-NOTES.txt ]] && ok || bad "broken-git: dir/notes removed"
 grep -qiE "git status could not be read|refusing to remove" "$TMP/err.log" && ok || bad "broken-git: no fail-closed diagnostic"
 
+# 4b2) valid clean repo + corrupt .git/index (rev-parse ok, status rc=128)
+#       -> must NOT abort under set -e; refused with diagnostic
+rm -rf "$WD"; mkdir -p "$WD"
+printf '{"schemaVersion":1,"id":"dsh-launcher","name":"x","version":"1","description":"x","kinds":["bar-widget"],"entryPoints":{"barWidget":"BarWidget.qml"}}' > "$WD/manifest.json"
+printf '// DSH Launcher bar widget (marketplace-safe).\n' > "$WD/BarWidget.qml"
+git -C "$WD" init -q; git -C "$WD" add -A; git -C "$WD" -c user.name=t -c user.email=t@t commit -qm base
+python3 -c "import os;open(os.path.expandvars('$WD/.git/index'),'wb').write(b'NOTANINDEX'*100)"
+rm -f "$TMP/omarchy.log"; : > "$TMP/err.log"
+rc=$(run_uninstall)
+[[ $rc -eq 0 ]] && ok || bad "corrupt-index: uninstall aborted (rc=$rc)"
+[[ $(removed_calls) -eq 0 ]] && ok || bad "corrupt-index: plugin remove was called"
+[[ -d $WD ]] && ok || bad "corrupt-index: dir removed"
+grep -qiE "could not be read|refusing to remove" "$TMP/err.log" && ok || bad "corrupt-index: no diagnostic"
+
 # 4c) plain non-git directory (no .git) -> removal proceeds (Omarchy keeps a backup)
 rm -rf "$WD"; mkdir -p "$WD"
 printf '{"schemaVersion":1,"id":"dsh-launcher","name":"x","version":"1","description":"x","kinds":["bar-widget"],"entryPoints":{"barWidget":"BarWidget.qml"}}' > "$WD/manifest.json"

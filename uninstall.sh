@@ -323,12 +323,14 @@ elif [[ -d $WIDGET_DIR ]] \
   if [[ -e "$WIDGET_DIR/.git" ]]; then
     if rev=$(git -C "$WIDGET_DIR" rev-parse --is-inside-work-tree 2>/dev/null) \
         && [[ $rev == "true" ]]; then
-      status=$(git --no-optional-locks -C "$WIDGET_DIR" status --porcelain --untracked-files=all 2>/dev/null)
-      status_rc=$?
-      if (( status_rc != 0 )); then
+      if status=$(git --no-optional-locks -C "$WIDGET_DIR" status --porcelain --untracked-files=all 2>/dev/null); then
+        if [[ -n $status ]]; then
+          verdict="dirty"
+        fi
+      else
+        # status read failed (corrupt index etc.): do not let set -e abort the
+        # uninstall - fail closed for this widget and keep going.
         verdict="unverifiable"
-      elif [[ -n $status ]]; then
-        verdict="dirty"
       fi
     else
       verdict="unverifiable"
