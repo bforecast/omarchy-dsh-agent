@@ -310,7 +310,7 @@ if $KEEP_WIDGET; then
   echo "== Skipped bar-widget removal (--keep-widget)"
 elif [[ -d $WIDGET_DIR ]] \
     && grep -qF '"id": "dsh-launcher"' "$WIDGET_DIR/manifest.json" 2>/dev/null \
-    && grep -qF "DSH Launcher bar widget." "$WIDGET_DIR/BarWidget.qml" 2>/dev/null; then
+    && grep -qF "DSH Launcher bar widget" "$WIDGET_DIR/BarWidget.qml" 2>/dev/null; then
   if $DRY; then
     echo "  [dry-run] would remove the bar widget: omarchy plugin remove $WIDGET_ID --yes"
   else
