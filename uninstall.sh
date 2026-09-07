@@ -311,18 +311,36 @@ if $KEEP_WIDGET; then
 elif [[ -d $WIDGET_DIR ]] \
     && grep -qE '"id"[[:space:]]*:[[:space:]]*"dsh-launcher"' "$WIDGET_DIR/manifest.json" 2>/dev/null \
     && grep -qF "DSH Launcher bar widget" "$WIDGET_DIR/BarWidget.qml" 2>/dev/null; then
-  # Fail closed on uncommitted local changes inside a git worktree: an
-  # automatic `plugin remove --yes` would rm -rf them. The user must commit,
-  # stash, back up or remove manually first.
-  dirty=false
-  if git -C "$WIDGET_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    if [[ -n $(git --no-optional-locks -C "$WIDGET_DIR" status --porcelain --untracked-files=all 2>/dev/null | head -1) ]]; then
-      dirty=true
+  # Fail closed whenever removal would risk user data:
+  #   * a git-managed widget (a .git dir/file is present) whose worktree has
+  #     uncommitted changes, OR
+  #   * a git-managed widget whose git status cannot be read (corrupt .git,
+  #     permission problems, ...) - an automatic `plugin remove --yes` would
+  #     rm -rf it, so we never guess "clean" on a read failure.
+  # Only a verified-clean git widget, or a plain non-git directory (for which
+  # Omarchy's own removal keeps a backup), proceeds to automatic removal.
+  verdict="clean"
+  if [[ -e "$WIDGET_DIR/.git" ]]; then
+    if rev=$(git -C "$WIDGET_DIR" rev-parse --is-inside-work-tree 2>/dev/null) \
+        && [[ $rev == "true" ]]; then
+      status=$(git --no-optional-locks -C "$WIDGET_DIR" status --porcelain --untracked-files=all 2>/dev/null)
+      status_rc=$?
+      if (( status_rc != 0 )); then
+        verdict="unverifiable"
+      elif [[ -n $status ]]; then
+        verdict="dirty"
+      fi
+    else
+      verdict="unverifiable"
     fi
   fi
-  if $dirty; then
+  if [[ $verdict == "dirty" ]]; then
     echo "!! Bar widget '$WIDGET_ID' has uncommitted local changes (git worktree); refusing to remove it automatically." >&2
     echo "   Commit or stash them, back the directory up, or remove it manually with:" >&2
+    echo "   omarchy plugin remove $WIDGET_ID --yes" >&2
+  elif [[ $verdict == "unverifiable" ]]; then
+    echo "!! Bar widget '$WIDGET_ID' looks git-managed (.git present) but its git status could not be read;" >&2
+    echo "   refusing to remove it automatically. Inspect/repair or back up the directory first, then:" >&2
     echo "   omarchy plugin remove $WIDGET_ID --yes" >&2
   elif $DRY; then
     echo "  [dry-run] would remove the bar widget: omarchy plugin remove $WIDGET_ID --yes"

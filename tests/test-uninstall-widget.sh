@@ -68,8 +68,31 @@ run_uninstall >/dev/null
 [[ $(removed_calls) -eq 0 ]] && ok || bad "staged-modified: plugin remove was called"
 [[ -d $WD ]] && ok || bad "staged-modified: dir removed"
 
-# 4) untracked file -> refused
-git -C "$WD" reset -q; git -C "$WD" checkout -q . 2>/dev/null || true
+# 4b) broken .git (empty dir, status returns 128) -> refused with diagnostic
+rm -rf "$WD"; mkdir -p "$WD/.git"
+printf '{"schemaVersion":1,"id":"dsh-launcher","name":"x","version":"1","description":"x","kinds":["bar-widget"],"entryPoints":{"barWidget":"BarWidget.qml"}}' > "$WD/manifest.json"
+printf '// DSH Launcher bar widget (marketplace-safe).\n' > "$WD/BarWidget.qml"
+printf 'UNCOMMITTED-NOTES\n' > "$WD/UNCOMMITTED-NOTES.txt"
+rm -f "$TMP/omarchy.log"; : > "$TMP/err.log"
+run_uninstall >/dev/null
+[[ $(removed_calls) -eq 0 ]] && ok || bad "broken-git: plugin remove was called"
+[[ -d $WD ]] && [[ -f $WD/UNCOMMITTED-NOTES.txt ]] && ok || bad "broken-git: dir/notes removed"
+grep -qiE "git status could not be read|refusing to remove" "$TMP/err.log" && ok || bad "broken-git: no fail-closed diagnostic"
+
+# 4c) plain non-git directory (no .git) -> removal proceeds (Omarchy keeps a backup)
+rm -rf "$WD"; mkdir -p "$WD"
+printf '{"schemaVersion":1,"id":"dsh-launcher","name":"x","version":"1","description":"x","kinds":["bar-widget"],"entryPoints":{"barWidget":"BarWidget.qml"}}' > "$WD/manifest.json"
+printf '// DSH Launcher bar widget (marketplace-safe).\n' > "$WD/BarWidget.qml"
+rm -f "$TMP/omarchy.log"; : > "$TMP/err.log"
+run_uninstall >/dev/null
+[[ $(removed_calls) -ge 1 ]] && ok || bad "plain-dir: plugin remove not called"
+[[ ! -d $WD ]] && ok || bad "plain-dir: dir not removed by mock"
+
+# 4) untracked file -> refused (self-contained setup)
+rm -rf "$WD"; mkdir -p "$WD"
+printf '{"schemaVersion":1,"id":"dsh-launcher","name":"x","version":"1","description":"x","kinds":["bar-widget"],"entryPoints":{"barWidget":"BarWidget.qml"}}' > "$WD/manifest.json"
+printf '// DSH Launcher bar widget (marketplace-safe).\n' > "$WD/BarWidget.qml"
+git -C "$WD" init -q; git -C "$WD" add -A; git -C "$WD" -c user.name=t -c user.email=t@t commit -qm base
 printf 'extra' > "$WD/untracked-file.txt"
 rm -f "$TMP/omarchy.log"
 run_uninstall >/dev/null
