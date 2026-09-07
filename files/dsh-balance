@@ -3,12 +3,11 @@
 # dsh-balance -- print the DeepSeek account balance used by the configured DSH
 # provider (DEEPSEEK_API_KEY), e.g. "0.04 CNY". Prints nothing and exits
 # non-zero when no key is configured, the API is unreachable, the response is
-# oversized or the payload is not well-formed.
+# oversized or the payload is not well-formed / out of bounds.
 #
 # The key travels over stdin (-H @-): it never appears in argv or on disk.
-# The response is byte-capped by curl (--max-filesize) and re-capped and
-# validated inside the parser; the response is never passed as a process
-# argument either.
+# The response is byte-capped by curl (--max-filesize), piped straight into the
+# parser (no shell variable, no process argument), and validated strictly.
 set -uo pipefail
 
 key="${DEEPSEEK_API_KEY:-}"
@@ -22,20 +21,22 @@ fi
 
 cap=$((64 * 1024))   # hard ceiling for the response body
 
-resp=$(printf 'Authorization: Bearer %s\n' "$key" | \
+printf 'Authorization: Bearer %s\n' "$key" | \
   curl -fsS --max-time 10 --max-filesize "$cap" \
-    https://api.deepseek.com/user/balance -H @- 2>/dev/null) || exit 1
-
-printf '%s' "$resp" | python3 -c '
-import json, sys
+    https://api.deepseek.com/user/balance -H @- 2>/dev/null | \
+  python3 -c '
+import json, math, re, sys
 
 cap = 64 * 1024
 data = sys.stdin.read(cap + 1)
 if len(data) > cap:
-    sys.exit(1)          # oversized payload: fail closed
+    sys.exit(1)                 # oversized payload: fail closed
+
+def reject_constant(_):
+    raise ValueError("non-standard json constant")
 
 try:
-    payload = json.loads(data)
+    payload = json.loads(data, parse_constant=reject_constant)
 except Exception:
     sys.exit(1)
 
@@ -48,12 +49,25 @@ if not isinstance(first, dict):
 
 total = first.get("total_balance")
 currency = first.get("currency", "CNY")
-if not isinstance(total, (str, int, float)) or isinstance(total, bool):
+
+if isinstance(total, bool):
     sys.exit(1)
-total_s = str(total)
-currency_s = str(currency)
-if len(total_s) > 32 or not (2 <= len(currency_s) <= 8) or not currency_s.isalpha():
+if isinstance(total, (int, float)):
+    if not math.isfinite(total) or total < 0:
+        sys.exit(1)
+    total_s = str(total)
+else:
+    total_s = str(total)
+if not total_s or len(total_s) > 32:
+    sys.exit(1)
+# non-negative decimal string
+if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", total_s):
     sys.exit(1)
 
-print(f"{total_s} {currency_s}".strip())
+if isinstance(currency, bool) or not isinstance(currency, str):
+    sys.exit(1)
+if not re.fullmatch(r"[A-Z]{2,8}", currency):
+    sys.exit(1)
+
+print(f"{total_s} {currency}".strip())
 ' || exit 1

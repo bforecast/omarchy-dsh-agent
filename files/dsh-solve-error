@@ -130,15 +130,19 @@ if [[ $dry_run == false && $auto_yes == false ]]; then
   fi
 fi
 
-# Keep the diagnostics out of the process command line: the context is written
-# to a 0600 file and the task text only carries the file path.
+# Keep the diagnostics out of the process command line and away from shared
+# fixed paths: every invocation gets its own context/work files under a 0700
+# runtime dir (umask 077, files 0600), cleaned up by a single EXIT trap.
+umask 077
 ctx_dir="$HOME/.local/state/dsh-omarchy-agent"
-ctx_file="$ctx_dir/error-context.txt"
 mkdir -p "$ctx_dir"
 chmod 700 "$ctx_dir" 2>/dev/null || true
+ctx_file=""
+work_file=""
+trap 'rm -f "$ctx_file" "$work_file"' EXIT
+ctx_file=$(mktemp "$ctx_dir/ctx.XXXXXX") || exit 1
 printf '%s\n' "$context" >"$ctx_file"
 chmod 600 "$ctx_file"
-trap 'rm -f "$ctx_file"' EXIT
 
 task=$(cat <<PROMPT
 You are debugging an error report on an Omarchy Linux system (Arch Linux + Hyprland + Quickshell).
@@ -177,36 +181,40 @@ if $dry_run; then
   exit 0
 fi
 
-STATE_DIR="$HOME/.local/state/dsh-omarchy-agent"
-TRANSCRIPT="$STATE_DIR/last-error-solve.txt"
-
-mkdir -p "$STATE_DIR"
-chmod 700 "$STATE_DIR" 2>/dev/null || true
-umask 077
-
 cd "$DSH_REPO" || exit 1
 echo "dsh-solve-error: asking DSH to analyze the error (headless run, may take a while)…" >&2
+work_file=$(mktemp "$ctx_dir/solve.XXXXXX") || exit 1
+chmod 600 "$work_file"
 # Reasoning streams to stderr (live, activity feedback); the final assistant
-# message (markdown) is stdout and is captured cleanly for pretty rendering.
-"${cmd[@]}" >"$TRANSCRIPT" 2> >(sed -u 's/^/  · /' >&2)
+# message (markdown) is stdout, captured into this run's private file.
+"${cmd[@]}" >"$work_file" 2> >(sed -u 's/^/  · /' >&2)
 rc=$?
-chmod 600 "$TRANSCRIPT" 2>/dev/null || true
 if (( rc != 0 )); then
   echo "dsh-solve-error: DSH exited with $rc (see reasoning above)." >&2
 fi
-echo
-echo "== DSH analysis result ==" >&2
-# With a TTY, render the markdown with bat; otherwise print plain text
-if [[ -t 1 ]] && command -v bat >/dev/null 2>&1; then
-  bat --paging=never -l md "$TRANSCRIPT" 2>/dev/null || cat "$TRANSCRIPT"
+
+LAST="$ctx_dir/last-error-solve.txt"
+# Render this run's result, then atomically publish it as the "last" result
+# (never written in place by concurrent invocations).
+if [[ -s $work_file ]]; then
+  echo
+  echo "== DSH analysis result ==" >&2
+  if [[ -t 1 ]] && command -v bat >/dev/null 2>&1; then
+    bat --paging=never -l md "$work_file" 2>/dev/null || cat "$work_file"
+  else
+    cat "$work_file"
+  fi
+  mv -f "$work_file" "$LAST"
+  work_file=""
+  chmod 600 "$LAST" 2>/dev/null || true
+  echo "dsh-solve-error: analysis finished (exit=$rc). Result saved to:" >&2
+  echo "  $LAST" >&2
+  if command -v omarchy-notification-send >/dev/null 2>&1 && [[ -n ${WAYLAND_DISPLAY:-} ]]; then
+    omarchy-notification-send --urgency normal "DSH error analysis finished" \
+      "Result saved to: $LAST (rendered in the terminal). Analysis does not change the system automatically; apply the suggested fixes yourself." >/dev/null 2>&1 || true
+  fi
 else
-  cat "$TRANSCRIPT"
-fi
-echo "dsh-solve-error: analysis finished (exit=$rc). Result saved to:" >&2
-echo "  $TRANSCRIPT" >&2
-if command -v omarchy-notification-send >/dev/null 2>&1 && [[ -n ${WAYLAND_DISPLAY:-} ]]; then
-  omarchy-notification-send --urgency normal "DSH error analysis finished" \
-    "Result saved to: $TRANSCRIPT (rendered in the terminal). Analysis does not change the system automatically; apply the suggested fixes yourself." >/dev/null 2>&1 || true
+  echo "dsh-solve-error: no output was produced (exit=$rc)." >&2
 fi
 # Keep the window open in an interactive terminal so the result can be read
 if [[ -t 0 && -t 1 ]]; then
