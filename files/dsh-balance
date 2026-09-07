@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 #
 # dsh-balance -- print the DeepSeek account balance used by the configured DSH
-# provider (DEEPSEEK_API_KEY), e.g. "¥12.34" or "12.34 CNY". Prints nothing and
-# exits non-zero when no key is configured or the API is unreachable.
+# provider (DEEPSEEK_API_KEY), e.g. "0.04 CNY". Prints nothing and exits
+# non-zero when no key is configured, the API is unreachable, the response is
+# oversized or the payload is not well-formed.
 #
-# The key is read from the environment or from ~/.dsh/.credentials.yaml and is
-# used only for this one HTTPS request; it is never echoed or stored.
+# The key travels over stdin (-H @-): it never appears in argv or on disk.
+# The response is byte-capped by curl (--max-filesize) and re-capped and
+# validated inside the parser; the response is never passed as a process
+# argument either.
 set -uo pipefail
 
 key="${DEEPSEEK_API_KEY:-}"
@@ -17,23 +20,40 @@ if [[ -z $key ]]; then
 fi
 [[ -n $key ]] || exit 1
 
-# The header travels over stdin (-H @-): the API key never appears in the
-# process command line (argv) and is never written to disk.
-out=$(printf 'Authorization: Bearer %s\n' "$key" | \
-  curl -fsS --max-time 10 https://api.deepseek.com/user/balance -H @- 2>/dev/null) || exit 1
+cap=$((64 * 1024))   # hard ceiling for the response body
 
-python3 - "$out" <<'PY'
+resp=$(printf 'Authorization: Bearer %s\n' "$key" | \
+  curl -fsS --max-time 10 --max-filesize "$cap" \
+    https://api.deepseek.com/user/balance -H @- 2>/dev/null) || exit 1
+
+printf '%s' "$resp" | python3 -c '
 import json, sys
+
+cap = 64 * 1024
+data = sys.stdin.read(cap + 1)
+if len(data) > cap:
+    sys.exit(1)          # oversized payload: fail closed
+
 try:
-    d = json.loads(sys.argv[1])
-    infos = d.get("balance_infos") or []
+    payload = json.loads(data)
 except Exception:
     sys.exit(1)
-if not infos:
+
+infos = payload.get("balance_infos") if isinstance(payload, dict) else None
+if not isinstance(infos, list) or not infos:
     sys.exit(1)
-total = infos[0].get("total_balance")
-cur = infos[0].get("currency", "CNY")
-if total is None:
+first = infos[0]
+if not isinstance(first, dict):
     sys.exit(1)
-print(f"{total} {cur}".strip())
-PY
+
+total = first.get("total_balance")
+currency = first.get("currency", "CNY")
+if not isinstance(total, (str, int, float)) or isinstance(total, bool):
+    sys.exit(1)
+total_s = str(total)
+currency_s = str(currency)
+if len(total_s) > 32 or not (2 <= len(currency_s) <= 8) or not currency_s.isalpha():
+    sys.exit(1)
+
+print(f"{total_s} {currency_s}".strip())
+' || exit 1
